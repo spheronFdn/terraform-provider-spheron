@@ -43,32 +43,37 @@ func (r *DomainResource) Metadata(ctx context.Context, req resource.MetadataRequ
 func (r *DomainResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "Instnce resource",
-
+		MarkdownDescription: "Instance domain resource",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
-				Computed: true,
+				MarkdownDescription: "Id of the domain.",
+				Computed:            true,
 			},
 			"name": schema.StringAttribute{
-				Required: true,
+				MarkdownDescription: "The domain name",
+				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
 			"verified": schema.BoolAttribute{
-				Computed: true,
+				MarkdownDescription: "Is veriffied. True means that the domain is verified and that it will start serving the content",
+				Computed:            true,
 			},
 			"instance_port": schema.Int64Attribute{
-				Required: true,
+				MarkdownDescription: "Container port of the instnace to whict to attach the domain.",
+				Required:            true,
 			},
 			"type": schema.StringAttribute{
-				Required: true,
+				MarkdownDescription: "Type of the domain. Available options are domain and subdomain.",
+				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
 			"instance_id": schema.StringAttribute{
-				Required: true,
+				MarkdownDescription: "The id of an instance to which to attach the domain.",
+				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},

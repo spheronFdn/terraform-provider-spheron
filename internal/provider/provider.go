@@ -37,12 +37,12 @@ func (p *SpheronProvider) Schema(ctx context.Context, req provider.SchemaRequest
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
 			"token": schema.StringAttribute{
-				MarkdownDescription: "Spheron api token",
+				MarkdownDescription: "Spheron access token. If left empty provide SPHERON_TOKEN env variable.",
 				Optional:            true,
 			},
 		},
-		Blocks:      map[string]schema.Block{},
-		Description: "Interface with the Spheron service API.",
+		Blocks:              map[string]schema.Block{},
+		MarkdownDescription: "Interface with the Spheron API.",
 	}
 }
 
@@ -59,7 +59,7 @@ func (p *SpheronProvider) Configure(ctx context.Context, req provider.ConfigureR
 	if config.Token.IsUnknown() {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("token"),
-			"Unknown Inventory service Token",
+			"Unknown Spheron access token",
 			"The provider cannot create the Spheron API client as there is an unknown token value for the Spheron API token. "+
 				"Either set the value directly in the provider, or use the SPHERON_TOKEN environment variable.",
 		)

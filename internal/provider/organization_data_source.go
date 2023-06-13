@@ -17,12 +17,10 @@ func NewOrganizationDataSource() datasource.DataSource {
 	return &OrganizationDataSource{}
 }
 
-// ExampleDataSource defines the data source implementation.
 type OrganizationDataSource struct {
 	client *client.SpheronApi
 }
 
-// ExampleDataSourceModel describes the data source data model.
 type SpheronDataSourceModel struct {
 	Name types.String `tfsdk:"name"`
 	ID   types.String `tfsdk:"id"`
@@ -34,16 +32,14 @@ func (d *OrganizationDataSource) Metadata(ctx context.Context, req datasource.Me
 
 func (d *OrganizationDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "Organization data source",
-
+		MarkdownDescription: "Organization data source..",
 		Attributes: map[string]schema.Attribute{
 			"name": schema.StringAttribute{
-				MarkdownDescription: "Organization name",
+				MarkdownDescription: "Organization name.",
 				Computed:            true,
 			},
 			"id": schema.StringAttribute{
-				MarkdownDescription: "Organization identifier",
+				MarkdownDescription: "Organization identifier.",
 				Computed:            true,
 			},
 		},
@@ -58,14 +54,14 @@ func (d *OrganizationDataSource) Configure(ctx context.Context, req datasource.C
 
 	client, ok := req.ProviderData.(*client.SpheronApi)
 	if !ok {
-		tflog.Error(ctx, "Unable to prepare client")
+		tflog.Error(ctx, "Unable to prepare Spheron API client.")
 		return
 	}
 	d.client = client
 }
 
 func (d *OrganizationDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
-	tflog.Debug(ctx, "Preparing to read item data source")
+	tflog.Debug(ctx, "Preparing to read item data source.")
 	var state SpheronDataSourceModel
 
 	// Read Terraform configuration data into the model
@@ -78,7 +74,7 @@ func (d *OrganizationDataSource) Read(ctx context.Context, req datasource.ReadRe
 	organization, err := d.client.GetOrganization()
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to get organization",
+			"Unable to get organization for provided access token.",
 			err.Error(),
 		)
 		return

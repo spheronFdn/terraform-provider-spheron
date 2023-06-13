@@ -74,48 +74,50 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 
 		Attributes: map[string]schema.Attribute{
 			"image": schema.StringAttribute{
-				MarkdownDescription: "Docker image",
+				MarkdownDescription: "The docker image to deploy. Currently only public dockerhub images are supported.",
 				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
 			"tag": schema.StringAttribute{
-				MarkdownDescription: "Docer image tag",
+				MarkdownDescription: "The tag of docker image.",
 				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
 			"cluster_name": schema.StringAttribute{
-				MarkdownDescription: "Cluster name",
+				MarkdownDescription: "The name of the cluster.",
 				Required:            true,
 			},
 			"ports": schema.ListNestedAttribute{
+				MarkdownDescription: "The list of port mappings",
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"container_port": schema.Int64Attribute{
-							MarkdownDescription: "Example configurable attribute",
+							MarkdownDescription: "Container port that will be exposed.",
 							Required:            true,
 						},
 						"exposed_port": schema.Int64Attribute{
-							MarkdownDescription: "Example configurable attribute",
+							MarkdownDescription: "The port container port will be exposed to. Currently only posible to expose to port 80. Leave empty to map to random value. Exposed port will be know and available for use after the deployment.",
 							Optional:            true,
 							Computed:            true,
 						},
 					},
 				},
-				Required: true,
+				Optional: true,
 			},
 			"env": schema.ListNestedAttribute{
+				MarkdownDescription: "The list of environmetnt variables.",
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"key": schema.StringAttribute{
-							MarkdownDescription: "Env var key",
+							MarkdownDescription: "Environment variable key.",
 							Required:            true,
 						},
 						"value": schema.StringAttribute{
-							MarkdownDescription: "Env var value",
+							MarkdownDescription: "Environment variable value.",
 							Required:            true,
 						},
 					},
@@ -123,14 +125,15 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 				Optional: true,
 			},
 			"env_secret": schema.ListNestedAttribute{
+				MarkdownDescription: "The list of secret environmetnt variables.",
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"key": schema.StringAttribute{
-							MarkdownDescription: "Env var key",
+							MarkdownDescription: "Environment variable key.",
 							Required:            true,
 						},
 						"value": schema.StringAttribute{
-							MarkdownDescription: "Env var value",
+							MarkdownDescription: "Environment variable value.",
 							Required:            true,
 						},
 					},
@@ -138,28 +141,31 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 				Optional: true,
 			},
 			"commands": schema.ListAttribute{
-				ElementType: types.StringType,
-				Optional:    true,
+				MarkdownDescription: "List of executables for docker CMD command.",
+				ElementType:         types.StringType,
+				Optional:            true,
 			},
 			"args": schema.ListAttribute{
-				ElementType: types.StringType,
-				Optional:    true,
+				MarkdownDescription: "List of params for docker CMD command.",
+				ElementType:         types.StringType,
+				Optional:            true,
 			},
 			"region": schema.StringAttribute{
-				MarkdownDescription: "Docer image tag",
+				MarkdownDescription: "Region to which to deploy instance.",
 				Optional:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
 			"machine_image": schema.StringAttribute{
-				MarkdownDescription: "Docer image tag",
+				MarkdownDescription: "Machine image name which should be used for deploying instance.",
 				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
 			"health_check": schema.ObjectAttribute{
+				MarkdownDescription: "Path and container port on which health check should be done.",
 				AttributeTypes: map[string]attr.Type{
 					"path": types.StringType,
 					"port": types.Int64Type,
@@ -167,7 +173,7 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 				Optional: true,
 			},
 			"id": schema.StringAttribute{
-				MarkdownDescription: "Docer image tag",
+				MarkdownDescription: "Id of the instance.",
 				Computed:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),

@@ -50,18 +50,40 @@ func (r *MarketplaceInstanceResource) Schema(ctx context.Context, req resource.S
 		MarkdownDescription: "Instnce resource",
 
 		Attributes: map[string]schema.Attribute{
+			"region": schema.StringAttribute{
+				MarkdownDescription: "Region to which to deploy instance.",
+				Optional:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"machine_image": schema.StringAttribute{
+				MarkdownDescription: "Machine image name which should be used for deploying instance.",
+				Required:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"name": schema.StringAttribute{
+				MarkdownDescription: "The name of the marketplace app.",
+				Required:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+			},
 			"env": schema.ListNestedAttribute{
+				MarkdownDescription: "The list of environmetnt variables. NOTE: Some marketplace apps have required env variables that must be provided.",
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"key": schema.StringAttribute{
-							MarkdownDescription: "Env var key",
+							MarkdownDescription: "Environment variable key.",
 							Required:            true,
 							PlanModifiers: []planmodifier.String{
 								stringplanmodifier.RequiresReplace(),
 							},
 						},
 						"value": schema.StringAttribute{
-							MarkdownDescription: "Env var value",
+							MarkdownDescription: "Environment variable value.",
 							Required:            true,
 							PlanModifiers: []planmodifier.String{
 								stringplanmodifier.RequiresReplace(),
@@ -74,29 +96,8 @@ func (r *MarketplaceInstanceResource) Schema(ctx context.Context, req resource.S
 					listplanmodifier.RequiresReplace(),
 				},
 			},
-			"region": schema.StringAttribute{
-				MarkdownDescription: "Docer image tag",
-				Optional:            true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"machine_image": schema.StringAttribute{
-				MarkdownDescription: "Docer image tag",
-				Required:            true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
-			"name": schema.StringAttribute{
-				MarkdownDescription: "Marketplace app name",
-				Required:            true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
-			},
 			"id": schema.StringAttribute{
-				MarkdownDescription: "Docer image tag",
+				MarkdownDescription: "Id or the instance.",
 				Computed:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
@@ -152,7 +153,7 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 	computeMachines, err := r.client.GetComputeMachines()
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to get fetch compute machines.",
+			"Unable to get fetch available compute machines.",
 			err.Error(),
 		)
 		return
@@ -170,7 +171,7 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 	marketplaceApps, err := r.client.GetClusterTemplates()
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to get get markeplace apps",
+			"Unable to get available markeplace apps.",
 			err.Error(),
 		)
 		return
@@ -179,7 +180,7 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 	chosenMarketplaceApp, err := findMarketplaceAppByName(marketplaceApps, plan.Name.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to get marketplace app by provided name",
+			"Unable to get marketplace app by provided name.",
 			err.Error(),
 		)
 		return
@@ -209,7 +210,7 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to deploy instance from marketplace app",
+			"Unable to deploy instance from marketplace app.",
 			err.Error(),
 		)
 		return
@@ -219,8 +220,8 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 
 	if err != nil || !deployed {
 		resp.Diagnostics.AddError(
-			"Marketplace instance deployment failed",
-			"Marketplace instance deployment failed",
+			"Marketplace instance deployment failed.",
+			"Marketplace instance deployment failed.",
 		)
 		return
 	}
@@ -240,7 +241,7 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 
 func (r *MarketplaceInstanceResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state MarketplaceInstanceResourceModel
-	tflog.Debug(ctx, "Preparing to read item resource")
+	tflog.Debug(ctx, "Preparing to read item resource.")
 	// Get current state
 	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
@@ -333,7 +334,6 @@ func checkRequiredDeploymentVariables(appVariables []client.MarketplaceAppVariab
 	allVariables := make(map[string]client.MarketplaceDeploymentVariable)
 	missingVariables := make(map[string]bool)
 
-	// Set default values for missing required variables
 	for _, appVar := range appVariables {
 		deploymentVar := client.MarketplaceDeploymentVariable{
 			Label: appVar.Label,
@@ -346,7 +346,6 @@ func checkRequiredDeploymentVariables(appVariables []client.MarketplaceAppVariab
 		}
 	}
 
-	// Update existing deployment variables and mark required variables as found
 	for _, depVar := range deploymentVariables {
 		if depVar, ok := allVariables[depVar.Label]; ok {
 			allVariables[depVar.Label] = depVar
@@ -354,14 +353,12 @@ func checkRequiredDeploymentVariables(appVariables []client.MarketplaceAppVariab
 		}
 	}
 
-	// Check if there are any missing required variables
 	for varName, isMissing := range missingVariables {
 		if isMissing {
 			return nil, errors.New(fmt.Sprintf("Missing required deployment variable: %s", varName))
 		}
 	}
 
-	// Collect the updated deployment variables
 	updatedDeploymentVariables := make([]client.MarketplaceDeploymentVariable, 0, len(allVariables))
 	for _, variable := range allVariables {
 		updatedDeploymentVariables = append(updatedDeploymentVariables, variable)
