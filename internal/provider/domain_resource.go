@@ -42,7 +42,6 @@ func (r *DomainResource) Metadata(ctx context.Context, req resource.MetadataRequ
 
 func (r *DomainResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
 		MarkdownDescription: "Instance domain resource",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
@@ -181,21 +180,53 @@ func (r *DomainResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	// instance, err := r.client.GetClusterInstance(state.Id.ValueString())
-	// if err != nil {
-	// 	fmt.Println("Error:", err)
-	// 	return
-	// }
+	if state.ID.IsNull() || state.InstanceID.IsNull() {
+		resp.Diagnostics.AddError(
+			"Id or instanceId not provided. Unable to get domain details.",
+			"Id or instanceId not provided. Unable to get domain details.",
+		)
+		return
+	}
 
-	// state.Image = types.StringValue(instance.)
+	domains, err := r.client.GetClusterInstanceDomains(state.InstanceID.ValueString())
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
 
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := r.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read example, got error: %s", err))
-	//     return
-	// }
+	instance, err := r.client.GetClusterInstance(state.InstanceID.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Coudnt fetch instance for specified domain.",
+			err.Error(),
+		)
+		return
+	}
+
+	order, err := r.client.GetClusterInstanceOrder(instance.ActiveOrder)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Instance domain is attached to doesn't have provisioned deployments.",
+			err.Error(),
+		)
+		return
+	}
+
+	domain, err := findDomainByID(domains, state.ID.ValueString())
+
+	containerPort, err := getPortFromDeploymentURL(order, domain.Link)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Instance doesn't have provisioned deployments.",
+			err.Error(),
+		)
+		return
+	}
+
+	state.InstancePort = types.Int64Value(int64(containerPort))
+	state.Name = types.StringValue(domain.Name)
+	state.Verified = types.BoolValue(domain.Verified)
+	state.Type = types.StringValue(string(domain.Type))
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -261,10 +292,8 @@ func (r *DomainResource) Update(ctx context.Context, req resource.UpdateRequest,
 		return
 	}
 
-	// populate the state from the domain
 	plan.Verified = types.BoolValue(domain.Verified)
 
-	// Save updated data into Terraform state
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -275,10 +304,8 @@ func (r *DomainResource) Update(ctx context.Context, req resource.UpdateRequest,
 
 func (r *DomainResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	tflog.Debug(ctx, "Preparing to delete item resource")
-	// Retrieve values from state
 	var state DomainResourceModel
 
-	// Read Terraform prior state data into the model
 	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 
@@ -311,17 +338,43 @@ func isValidDomainType(value string) bool {
 }
 
 func getInstanceDeploymentURL(input client.InstanceOrder, desiredPort int) string {
-	if desiredPort == 80 && input.URLPreview != "" {
-		return input.URLPreview
-	}
-
 	if input.ProtocolData != nil && input.ProtocolData.ProviderHost != "" {
 		for _, port := range input.ClusterInstanceConfiguration.Ports {
 			if port.ContainerPort == desiredPort {
+				if port.ExposedPort == 80 && input.URLPreview != "" {
+					return input.URLPreview
+				}
+
 				return fmt.Sprintf("%s:%d", input.ProtocolData.ProviderHost, port.ExposedPort)
 			}
 		}
 	}
 
 	return ""
+}
+
+func getPortFromDeploymentURL(input client.InstanceOrder, urlStr string) (int, error) {
+	if input.ProtocolData != nil && input.ProtocolData.ProviderHost != "" {
+		for _, port := range input.ClusterInstanceConfiguration.Ports {
+			if urlStr == input.URLPreview && port.ExposedPort == 80 {
+				return port.ContainerPort, nil
+			}
+
+			expectedURL := fmt.Sprintf("%s:%d", input.ProtocolData.ProviderHost, port.ExposedPort)
+			if urlStr == expectedURL {
+				return port.ContainerPort, nil
+			}
+		}
+	}
+
+	return 0, fmt.Errorf("no matching port found for the provided URL")
+}
+
+func findDomainByID(domains []client.Domain, id string) (client.Domain, error) {
+	for _, domain := range domains {
+		if domain.ID == id {
+			return domain, nil
+		}
+	}
+	return client.Domain{}, fmt.Errorf("Domain with ID %s not found", id)
 }

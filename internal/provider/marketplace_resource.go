@@ -2,15 +2,20 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 
 	"github.com/hashicorp/terraform-plugin-framework/types"
@@ -33,10 +38,11 @@ type MarketplaceInstanceResource struct {
 
 // ExampleResourceModel describes the resource data model.
 type MarketplaceInstanceResourceModel struct {
-	Env          []Env        `tfsdk:"env"`
 	Region       types.String `tfsdk:"region"`
 	Name         types.String `tfsdk:"name"`
 	MachineImage types.String `tfsdk:"machine_image"`
+	Ports        types.List   `tfsdk:"ports"`
+	Env          types.Set    `tfsdk:"env"`
 	Id           types.String `tfsdk:"id"`
 }
 
@@ -52,9 +58,9 @@ func (r *MarketplaceInstanceResource) Schema(ctx context.Context, req resource.S
 		Attributes: map[string]schema.Attribute{
 			"region": schema.StringAttribute{
 				MarkdownDescription: "Region to which to deploy instance.",
-				Optional:            true,
+				Required:            true,
 				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.RequiresReplaceIfConfigured(),
 				},
 			},
 			"machine_image": schema.StringAttribute{
@@ -71,29 +77,42 @@ func (r *MarketplaceInstanceResource) Schema(ctx context.Context, req resource.S
 					stringplanmodifier.RequiresReplace(),
 				},
 			},
-			"env": schema.ListNestedAttribute{
+			"env": schema.SetNestedAttribute{
 				MarkdownDescription: "The list of environmetnt variables. NOTE: Some marketplace apps have required env variables that must be provided.",
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
 						"key": schema.StringAttribute{
 							MarkdownDescription: "Environment variable key.",
 							Required:            true,
-							PlanModifiers: []planmodifier.String{
-								stringplanmodifier.RequiresReplace(),
-							},
 						},
 						"value": schema.StringAttribute{
 							MarkdownDescription: "Environment variable value.",
 							Required:            true,
-							PlanModifiers: []planmodifier.String{
-								stringplanmodifier.RequiresReplace(),
-							},
 						},
 					},
 				},
 				Optional: true,
+				PlanModifiers: []planmodifier.Set{
+					setplanmodifier.RequiresReplace(),
+				},
+			},
+			"ports": schema.ListNestedAttribute{
+				MarkdownDescription: "The list of port mappings",
+				NestedObject: schema.NestedAttributeObject{
+					Attributes: map[string]schema.Attribute{
+						"container_port": schema.Int64Attribute{
+							MarkdownDescription: "Container port that will be exposed.",
+							Computed:            true,
+						},
+						"exposed_port": schema.Int64Attribute{
+							MarkdownDescription: "The port container port will be exposed to. Exposed port will be know and available for use after the deployment.",
+							Computed:            true,
+						},
+					},
+				},
+				Computed: true,
 				PlanModifiers: []planmodifier.List{
-					listplanmodifier.RequiresReplace(),
+					listplanmodifier.UseStateForUnknown(),
 				},
 			},
 			"id": schema.StringAttribute{
@@ -108,7 +127,6 @@ func (r *MarketplaceInstanceResource) Schema(ctx context.Context, req resource.S
 }
 
 func (r *MarketplaceInstanceResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
 		return
 	}
@@ -187,8 +205,11 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 	}
 
 	topicId := uuid.New()
-	deploymentEnv, err := checkRequiredDeploymentVariables(chosenMarketplaceApp.ServiceData.Variables, mapMarketplaceEnvs(plan.Env))
 
+	envList := make([]Env, 0, len(plan.Env.Elements()))
+	plan.Env.ElementsAs(ctx, &envList, false)
+
+	deploymentEnv, err := checkRequiredDeploymentVariables(chosenMarketplaceApp.ServiceData.Variables, envList)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Required env variable not set!",
@@ -226,16 +247,27 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 		return
 	}
 
-	// Map response body to model
-	plan.Id = types.StringValue(response.ClusterInstanceID)
+	time.Sleep(5 * time.Second)
 
-	// Set state to fully populated data
+	order, err := r.client.GetClusterInstanceOrder(response.ClusterInstanceOrderID)
+
+	if err != nil || !deployed {
+		resp.Diagnostics.AddError(
+			"Instance deployment failed",
+			err.Error(),
+		)
+		return
+	}
+
+	plan.Id = types.StringValue(response.ClusterInstanceID)
+	plan.Ports = types.ListValueMust(types.ObjectType{AttrTypes: getPortAtrTypes()}, mapModelPortToPortValue(order.ClusterInstanceConfiguration.Ports))
+
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	// Save data into Terraform state
+
 	tflog.Debug(ctx, "Created item resource", map[string]any{"success": true})
 }
 
@@ -248,6 +280,67 @@ func (r *MarketplaceInstanceResource) Read(ctx context.Context, req resource.Rea
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	if state.Id.IsNull() {
+		resp.Diagnostics.AddError(
+			"Id not provided. Unable to get marketplace instance details.",
+			"Id not provided. Unable to get marketplace instance details.",
+		)
+		return
+	}
+
+	instance, err := r.client.GetClusterInstance(state.Id.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Coudnt fetch instance by provided id.",
+			err.Error(),
+		)
+		return
+	}
+	cluster, err := r.client.GetCluster(instance.Cluster)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Instance cluster not found.",
+			err.Error(),
+		)
+		return
+	}
+
+	order, err := r.client.GetClusterInstanceOrder(instance.ActiveOrder)
+	if err != nil {
+		state.MachineImage = types.StringValue("")
+		state.Region = types.StringValue("")
+		state.Name = types.StringValue(cluster.Name)
+
+		// Save updated data into Terraform state
+		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
+
+		return
+	}
+
+	jsona, err := json.Marshal(order)
+	tflog.Info(ctx, fmt.Sprintf("got ports %s", jsona))
+
+	ports, diag := types.ListValue(types.ObjectType{AttrTypes: getPortAtrTypes()}, mapModelPortToPortValue(order.ClusterInstanceConfiguration.Ports))
+	if diag.HasError() {
+		resp.Diagnostics.Append(diag.Errors()...)
+		return
+	}
+
+	if len(order.ClusterInstanceConfiguration.Env) != 0 {
+		envs, diag := types.SetValue(types.ObjectType{AttrTypes: getEnvAtrTypes()}, mapClientEnvsToEnvsValue(order.ClusterInstanceConfiguration.Env, false))
+		if diag.HasError() {
+			resp.Diagnostics.Append(diag.Errors()...)
+			return
+		}
+
+		state.Env = envs
+	}
+
+	state.Ports = ports
+	state.MachineImage = types.StringValue(order.ClusterInstanceConfiguration.AgreedMachineImage.MachineType)
+	state.Region = types.StringValue(order.ClusterInstanceConfiguration.Region)
+	state.Name = types.StringValue(cluster.Name)
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -276,7 +369,6 @@ func (r *MarketplaceInstanceResource) Delete(ctx context.Context, req resource.D
 	// Retrieve values from state
 	var state MarketplaceInstanceResourceModel
 
-	// Read Terraform prior state data into the model
 	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 
@@ -321,35 +413,35 @@ func findMarketplaceAppByName(apps []client.MarketplaceApp, name string) (client
 
 func mapMarketplaceEnvs(envList []Env) []client.MarketplaceDeploymentVariable {
 	marketplaceEnvs := make([]client.MarketplaceDeploymentVariable, 0, len(envList))
-	for i, env := range envList {
-		marketplaceEnvs[i] = client.MarketplaceDeploymentVariable{
+	for _, env := range envList {
+		marketplaceEnv := client.MarketplaceDeploymentVariable{
 			Value: env.Value.ValueString(),
 			Label: env.Key.ValueString(),
 		}
+		marketplaceEnvs = append(marketplaceEnvs, marketplaceEnv)
 	}
 	return marketplaceEnvs
 }
 
-func checkRequiredDeploymentVariables(appVariables []client.MarketplaceAppVariable, deploymentVariables []client.MarketplaceDeploymentVariable) ([]client.MarketplaceDeploymentVariable, error) {
-	allVariables := make(map[string]client.MarketplaceDeploymentVariable)
+func checkRequiredDeploymentVariables(appVariables []client.MarketplaceAppVariable, envList []Env) ([]client.MarketplaceDeploymentVariable, error) {
+	allVariables := make(map[string]client.MarketplaceAppVariable)
 	missingVariables := make(map[string]bool)
+	deploymentVariables := make([]client.MarketplaceDeploymentVariable, 0, len(envList))
 
 	for _, appVar := range appVariables {
-		deploymentVar := client.MarketplaceDeploymentVariable{
-			Label: appVar.Label,
-			Value: appVar.DefaultValue,
-		}
-		allVariables[appVar.Label] = deploymentVar
-
-		if appVar.Required {
-			missingVariables[appVar.Label] = true
-		}
+		allVariables[appVar.Name] = appVar
+		missingVariables[appVar.Name] = true
 	}
 
-	for _, depVar := range deploymentVariables {
-		if depVar, ok := allVariables[depVar.Label]; ok {
-			allVariables[depVar.Label] = depVar
-			missingVariables[depVar.Label] = false
+	for _, env := range envList {
+		if appVar, ok := allVariables[env.Key.ValueString()]; ok {
+			marketplaceEnv := client.MarketplaceDeploymentVariable{
+				Value: env.Value.ValueString(),
+				Label: appVar.Label,
+			}
+			deploymentVariables = append(deploymentVariables, marketplaceEnv)
+
+			missingVariables[appVar.Name] = false
 		}
 	}
 
@@ -359,10 +451,68 @@ func checkRequiredDeploymentVariables(appVariables []client.MarketplaceAppVariab
 		}
 	}
 
-	updatedDeploymentVariables := make([]client.MarketplaceDeploymentVariable, 0, len(allVariables))
-	for _, variable := range allVariables {
-		updatedDeploymentVariables = append(updatedDeploymentVariables, variable)
+	return deploymentVariables, nil
+}
+
+func mapModelPortToPortValue(portList []client.Port) []attr.Value {
+	ports := make([]attr.Value, len(portList))
+	for i, pm := range portList {
+		portTypes := make(map[string]attr.Type)
+		portValues := make(map[string]attr.Value)
+
+		portTypes["container_port"] = types.Int64Type
+		portTypes["exposed_port"] = types.Int64Type
+
+		portValues["container_port"] = types.Int64Value(int64(pm.ContainerPort))
+		portValues["exposed_port"] = types.Int64Value(int64(pm.ExposedPort))
+		port := types.ObjectValueMust(portTypes, portValues)
+
+		ports[i] = port
+
+		fmt.Printf("added %s", ports)
+	}
+	return ports
+}
+
+func getPortAtrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"container_port": types.Int64Type,
+		"exposed_port":   types.Int64Type,
+	}
+}
+
+func mapClientEnvsToEnvsValue(clientEnvs []client.Env, isSecret bool) []attr.Value {
+	if len(clientEnvs) == 0 {
+		return nil
 	}
 
-	return updatedDeploymentVariables, nil
+	envList := make([]attr.Value, 0, len(clientEnvs))
+
+	for _, clientEnv := range clientEnvs {
+		if clientEnv.IsSecret != isSecret {
+			continue
+		}
+
+		split := strings.SplitN(clientEnv.Value, "=", 2)
+		keyString, valueString := split[0], split[1]
+
+		portTypes := make(map[string]attr.Type)
+		portValues := make(map[string]attr.Value)
+
+		portTypes["key"] = types.StringType
+		portTypes["value"] = types.StringType
+
+		portValues["key"] = types.StringValue(keyString)
+		portValues["value"] = types.StringValue(valueString)
+
+		envList = append(envList, types.ObjectValueMust(portTypes, portValues))
+	}
+	return envList
+}
+
+func getEnvAtrTypes() map[string]attr.Type {
+	return map[string]attr.Type{
+		"key":   types.StringType,
+		"value": types.StringType,
+	}
 }

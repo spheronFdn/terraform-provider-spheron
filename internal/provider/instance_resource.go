@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -10,7 +11,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 
@@ -103,12 +107,18 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 							MarkdownDescription: "The port container port will be exposed to. Currently only posible to expose to port 80. Leave empty to map to random value. Exposed port will be know and available for use after the deployment.",
 							Optional:            true,
 							Computed:            true,
+							PlanModifiers: []planmodifier.Int64{
+								int64planmodifier.UseStateForUnknown(),
+							},
 						},
 					},
 				},
 				Optional: true,
+				PlanModifiers: []planmodifier.List{
+					listplanmodifier.RequiresReplaceIfConfigured(),
+				},
 			},
-			"env": schema.ListNestedAttribute{
+			"env": schema.SetNestedAttribute{
 				MarkdownDescription: "The list of environmetnt variables.",
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
@@ -123,8 +133,11 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 					},
 				},
 				Optional: true,
+				PlanModifiers: []planmodifier.Set{
+					setplanmodifier.RequiresReplaceIfConfigured(),
+				},
 			},
-			"env_secret": schema.ListNestedAttribute{
+			"env_secret": schema.SetNestedAttribute{
 				MarkdownDescription: "The list of secret environmetnt variables.",
 				NestedObject: schema.NestedAttributeObject{
 					Attributes: map[string]schema.Attribute{
@@ -139,6 +152,9 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 					},
 				},
 				Optional: true,
+				PlanModifiers: []planmodifier.Set{
+					setplanmodifier.RequiresReplaceIfConfigured(),
+				},
 			},
 			"commands": schema.ListAttribute{
 				MarkdownDescription: "List of executables for docker CMD command.",
@@ -152,7 +168,7 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 			},
 			"region": schema.StringAttribute{
 				MarkdownDescription: "Region to which to deploy instance.",
-				Optional:            true,
+				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
@@ -174,6 +190,7 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 			},
 			"id": schema.StringAttribute{
 				MarkdownDescription: "Id of the instance.",
+				Optional:            true,
 				Computed:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.UseStateForUnknown(),
@@ -314,21 +331,65 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 		return
 	}
 
-	// instance, err := r.client.GetClusterInstance(state.Id.ValueString())
-	// if err != nil {
-	// 	fmt.Println("Error:", err)
-	// 	return
-	// }
+	if state.Id.IsNull() {
+		resp.Diagnostics.AddError(
+			"Id not provided. Unable to get instance details.",
+			"Id not provided. Unable to get instance details.",
+		)
+		return
+	}
 
-	// state.Image = types.StringValue(instance.)
+	instance, err := r.client.GetClusterInstance(state.Id.ValueString())
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Coudnt fetch instance by provided id.",
+			err.Error(),
+		)
+		return
+	}
 
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := r.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read example, got error: %s", err))
-	//     return
-	// }
+	order, err := r.client.GetClusterInstanceOrder(instance.ActiveOrder)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Instance doesn't have provisioned deployments.",
+			err.Error(),
+		)
+		return
+	}
+
+	cluster, err := r.client.GetCluster(instance.Cluster)
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Instance cluster not found.",
+			err.Error(),
+		)
+		return
+	}
+
+	state.Args = order.ClusterInstanceConfiguration.Args
+	state.ClusterName = types.StringValue(cluster.Name)
+	state.Commands = order.ClusterInstanceConfiguration.Command
+	state.Env = mapClientEnvsToEnvs(order.ClusterInstanceConfiguration.Env, false)
+	state.EnvSecret = mapClientEnvsToEnvs(order.ClusterInstanceConfiguration.Env, true)
+
+	if instance.HealthCheck.Port != (client.Port{}) {
+		hcTypes := make(map[string]attr.Type)
+		hcValues := make(map[string]attr.Value)
+
+		hcTypes["port"] = types.Int64Type
+		hcTypes["path"] = types.StringType
+
+		hcValues["port"] = types.Int64Value(int64(instance.HealthCheck.Port.ContainerPort))
+		hcValues["path"] = types.StringValue(instance.HealthCheck.URL)
+
+		state.HealthCheck = types.ObjectValueMust(hcTypes, hcValues)
+	}
+
+	state.Image = types.StringValue(order.ClusterInstanceConfiguration.Image)
+	state.MachineImage = types.StringValue(order.ClusterInstanceConfiguration.AgreedMachineImage.MachineType)
+	state.Ports = mapModelPortToPort(order.ClusterInstanceConfiguration.Ports)
+	state.Region = types.StringValue(order.ClusterInstanceConfiguration.Region)
+	state.Tag = types.StringValue(order.ClusterInstanceConfiguration.Tag)
 
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
@@ -444,38 +505,67 @@ func (r *InstanceResource) ImportState(ctx context.Context, req resource.ImportS
 
 func mapPortToPortModel(portList []Port) []client.Port {
 	ports := make([]client.Port, len(portList))
-	for i, pm := range portList {
+	for _, pm := range portList {
 		exposedPort := int(pm.ContainerPort.ValueInt64())
 		if pm.ExposedPort.ValueInt64() != 0 {
 			exposedPort = int(pm.ExposedPort.ValueInt64())
 		}
 
-		ports[i] = client.Port{
+		port := client.Port{
 			ContainerPort: int(pm.ContainerPort.ValueInt64()),
 			ExposedPort:   exposedPort,
 		}
+		ports = append(ports, port)
 	}
 	return ports
 }
 
 func mapModelPortToPort(portList []client.Port) []Port {
 	ports := make([]Port, len(portList))
-	for i, pm := range portList {
-		ports[i] = Port{
+	for _, pm := range portList {
+		port := Port{
 			ContainerPort: types.Int64Value(int64(pm.ContainerPort)),
 			ExposedPort:   types.Int64Value(int64(pm.ExposedPort)),
 		}
+		ports = append(ports, port)
 	}
 	return ports
 }
 
 func mapEnvsToClientEnvs(envList []Env, isSecret bool) []client.Env {
 	clientEnvs := make([]client.Env, 0, len(envList))
-	for i, env := range envList {
-		clientEnvs[i] = client.Env{
+	for _, env := range envList {
+		clientEnv := client.Env{
 			Value:    env.Key.ValueString() + "=" + env.Value.ValueString(),
 			IsSecret: isSecret,
 		}
+		clientEnvs = append(clientEnvs, clientEnv)
 	}
 	return clientEnvs
+}
+
+func mapClientEnvsToEnvs(clientEnvs []client.Env, isSecret bool) []Env {
+	envList := make([]Env, 0, len(clientEnvs))
+
+	for _, clientEnv := range clientEnvs {
+		if clientEnv.IsSecret != isSecret {
+			continue
+		}
+
+		split := strings.SplitN(clientEnv.Value, "=", 2)
+		keyString, valueString := split[0], split[1]
+
+		newEnv := Env{
+			Key:   types.StringValue(keyString),
+			Value: types.StringValue(valueString),
+		}
+
+		envList = append(envList, newEnv)
+	}
+
+	if len(envList) == 0 {
+		return nil
+	}
+
+	return envList
 }

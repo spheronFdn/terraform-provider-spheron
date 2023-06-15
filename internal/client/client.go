@@ -41,8 +41,6 @@ func (api *SpheronApi) sendApiRequest(method string, path string, payload interf
 		}
 	}
 
-	fmt.Println(payload)
-
 	request, err := http.NewRequest(method, api.spheronApiUrl+path, bytes.NewBuffer(jsonPayload))
 	if err != nil {
 		return nil, err
@@ -255,7 +253,7 @@ func (api *SpheronApi) WaitForDeployedEvent(topicID string) (bool, error) {
 
 		if strings.HasPrefix(line, "event: message") {
 			data, err := reader.ReadString('\n')
-			fmt.Print("DATAAA:", data)
+			fmt.Print("DATA:", data)
 
 			if err != nil {
 				return false, err
@@ -396,6 +394,38 @@ func (api *SpheronApi) GetComputeMachines() ([]ComputeMachine, error) {
 	}
 
 	return response.AkashMachineImages, nil
+}
+
+func (api *SpheronApi) GetCluster(id string) (Cluster, error) {
+	response, err := api.sendApiRequest(HttpMethodGet, fmt.Sprintf("/v1/cluster/%s", id), nil, nil)
+	if err != nil {
+		return Cluster{}, err
+	}
+
+	var responseWrapper struct {
+		Cluster Cluster `json:"cluster"`
+	}
+	err = json.Unmarshal(response, &responseWrapper)
+	if err != nil {
+		return Cluster{}, err
+	}
+	return responseWrapper.Cluster, nil
+}
+
+func (api *SpheronApi) GetClusterInstanceDomains(id string) ([]Domain, error) {
+	response, err := api.sendApiRequest(HttpMethodGet, fmt.Sprintf("/v1/cluster-instance/%s/domains", id), nil, nil)
+	if err != nil {
+		return []Domain{}, err
+	}
+
+	var responseWrapper struct {
+		Domains []Domain `json:"domains"`
+	}
+	err = json.Unmarshal(response, &responseWrapper)
+	if err != nil {
+		return []Domain{}, err
+	}
+	return responseWrapper.Domains, nil
 }
 
 const (

@@ -116,8 +116,6 @@ type Instance struct {
 	ActiveOrder            string           `json:"activeOrder"`
 	LatestURLPreview       string           `json:"latestUrlPreview"`
 	AgreedMachineImageType MachineImageType `json:"agreedMachineImageType"`
-	RetrievableAkt         int              `json:"retrievableAkt"`
-	WithdrawnAkt           int              `json:"withdrawnAkt"`
 	HealthCheck            HealthCheck      `json:"healthCheck"`
 	CreatedAt              time.Time        `json:"createdAt"`
 	UpdatedAt              time.Time        `json:"updatedAt"`
@@ -174,7 +172,18 @@ type ProtocolData struct {
 }
 
 type ClusterInstanceConfiguration struct {
-	Ports []Port `json:"ports"`
+	Image              string             `json:"image"`
+	Tag                string             `json:"tag"`
+	Ports              []Port             `json:"ports"`
+	Env                []Env              `json:"env"`
+	Command            []string           `json:"command"`
+	Args               []string           `json:"args"`
+	Region             string             `json:"region"`
+	AgreedMachineImage AgreedMachineImage `json:"agreedMachineImage"`
+}
+
+type AgreedMachineImage struct {
+	MachineType string `json:"machineType"`
 }
 
 type MarketplaceApp struct {
@@ -211,4 +220,10 @@ type MarketplaceDeploymentVariable struct {
 type ComputeMachine struct {
 	ID   string `json:"_id"`
 	Name string `json:"name"`
+}
+
+type Cluster struct {
+	ID   string `json:"_id"`
+	Name string `json:"name"`
+	URL  string `json:"url"`
 }
