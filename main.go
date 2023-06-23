@@ -5,8 +5,9 @@ import (
 	"flag"
 	"log"
 
+	"terraform-provider-spheron/internal/provider"
+
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
-	"github.com/spheron/terraform-provider-spheron/internal/provider"
 )
 
 // Run "go generate" to format example terraform files and generate the docs for the registry/website

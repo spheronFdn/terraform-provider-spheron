@@ -3,8 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
-	"strings"
-	"time"
+	"reflect"
 
 	"github.com/google/uuid"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -14,16 +13,15 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 
+	"terraform-provider-spheron/internal/client"
+
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"github.com/spheron/terraform-provider-spheron/internal/client"
 )
 
-// Ensure provider defined types fully satisfy framework interfaces.
 var _ resource.Resource = &InstanceResource{}
 var _ resource.ResourceWithImportState = &InstanceResource{}
 
@@ -31,12 +29,10 @@ func NewInstanceResource() resource.Resource {
 	return &InstanceResource{}
 }
 
-// ExampleResource defines the resource implementation.
 type InstanceResource struct {
 	client *client.SpheronApi
 }
 
-// ExampleResourceModel describes the resource data model.
 type InstanceResourceModel struct {
 	Image        types.String `tfsdk:"image"`
 	Tag          types.String `tfsdk:"tag"`
@@ -73,7 +69,6 @@ func (r *InstanceResource) Metadata(ctx context.Context, req resource.MetadataRe
 
 func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
 		MarkdownDescription: "Instnce resource",
 
 		Attributes: map[string]schema.Attribute{
@@ -87,9 +82,6 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 			"tag": schema.StringAttribute{
 				MarkdownDescription: "The tag of docker image.",
 				Required:            true,
-				PlanModifiers: []planmodifier.String{
-					stringplanmodifier.RequiresReplace(),
-				},
 			},
 			"cluster_name": schema.StringAttribute{
 				MarkdownDescription: "The name of the cluster.",
@@ -133,9 +125,6 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 					},
 				},
 				Optional: true,
-				PlanModifiers: []planmodifier.Set{
-					setplanmodifier.RequiresReplaceIfConfigured(),
-				},
 			},
 			"env_secret": schema.SetNestedAttribute{
 				MarkdownDescription: "The list of secret environmetnt variables.",
@@ -152,9 +141,6 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 					},
 				},
 				Optional: true,
-				PlanModifiers: []planmodifier.Set{
-					setplanmodifier.RequiresReplaceIfConfigured(),
-				},
 			},
 			"commands": schema.ListAttribute{
 				MarkdownDescription: "List of executables for docker CMD command.",
@@ -201,7 +187,6 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 }
 
 func (r *InstanceResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
 		return
 	}
@@ -238,11 +223,6 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 
-	region := plan.Region.ValueString()
-	if region == "" {
-		region = "any"
-	}
-
 	var healthCheck HealthCheck
 	opts := basetypes.ObjectAsOptions{}
 	plan.HealthCheck.As(ctx, &healthCheck, opts)
@@ -260,7 +240,7 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		Env:                   append(mapEnvsToClientEnvs(plan.Env, false), mapEnvsToClientEnvs(plan.EnvSecret, true)...),
 		Command:               plan.Commands,
 		Args:                  plan.Args,
-		Region:                region,
+		Region:                plan.Region.ValueString(),
 		AkashMachineImageName: plan.MachineImage.ValueString(),
 	}
 
@@ -272,7 +252,7 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		ClusterProvider: "DOCKERHUB",
 		ClusterName:     plan.ClusterName.ValueString(),
 		HealthCheckURL:  healthCheck.Path.ValueString(),
-		HealthCheckPort: "",
+		HealthCheckPort: healthCheck.Port.String(),
 	}
 
 	response, err := r.client.CreateClusterInstance(createRequest)
@@ -285,46 +265,40 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 
-	deployed, err := r.client.WaitForDeployedEvent(topicId.String())
+	eventDataString, err := r.client.WaitForDeployedEvent(topicId.String())
 
-	if err != nil || !deployed {
+	if err != nil {
 		resp.Diagnostics.AddError(
-			"Instance deployment failed",
-			"Instance deployment failed",
+			"Instance deployment failed.",
+			fmt.Sprintf("Instance deployment on cluster %s failed.", plan.ClusterName.ValueString()),
 		)
 		return
 	}
 
-	time.Sleep(5 * time.Second)
-
-	order, err := r.client.GetClusterInstanceOrder(response.ClusterInstanceOrderID)
-
-	if err != nil || !deployed {
+	ports, err := ParseClientPorts(eventDataString)
+	if err != nil {
 		resp.Diagnostics.AddError(
-			"Instance deployment failed",
-			err.Error(),
+			"Instance deployment failed.",
+			fmt.Sprintf("Instance deployment on cluster %s failed.", plan.ClusterName.ValueString()),
 		)
 		return
 	}
 
-	// Map response body to model
 	plan.Id = types.StringValue(response.ClusterInstanceID)
-	plan.Ports = mapModelPortToPort(order.ClusterInstanceConfiguration.Ports)
+	plan.Ports = mapModelPortToPort(ports)
 
-	// Set state to fully populated data
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	// Save data into Terraform state
+
 	tflog.Debug(ctx, "Created item resource", map[string]any{"success": true})
 }
 
 func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state InstanceResourceModel
 	tflog.Debug(ctx, "Preparing to read item resource")
-	// Get current state
 	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -345,6 +319,12 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 			"Coudnt fetch instance by provided id.",
 			err.Error(),
 		)
+		return
+	}
+
+	if instance.State == "Closed" {
+		resp.State.RemoveResource(ctx)
+		resp.Diagnostics.AddWarning("Instance is closed", fmt.Sprintf("Instance %s, in cluster %s is closed. Applying will redeploy new instance in its place.", instance.ID, state.ClusterName.ValueString()))
 		return
 	}
 
@@ -391,14 +371,12 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 	state.Region = types.StringValue(order.ClusterInstanceConfiguration.Region)
 	state.Tag = types.StringValue(order.ClusterInstanceConfiguration.Tag)
 
-	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *InstanceResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var plan InstanceResourceModel
 
-	// Retrieve values from plan
 	diags := req.Plan.Get(ctx, &plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -425,7 +403,7 @@ func (r *InstanceResource) Update(ctx context.Context, req resource.UpdateReques
 			HealthCheckPort: int(healthCheck.Port.ValueInt64()),
 		}
 
-		_, err = r.client.UpdateClusterInstanceHealthCheckInfo(plan.Id.ValueString(), hcUpdate)
+		_, err := r.client.UpdateClusterInstanceHealthCheckInfo(plan.Id.ValueString(), hcUpdate)
 
 		if err != nil {
 			resp.Diagnostics.AddError(
@@ -436,37 +414,63 @@ func (r *InstanceResource) Update(ctx context.Context, req resource.UpdateReques
 		}
 	}
 
-	topicId := uuid.New()
-
-	updateRequest := client.UpdateInstanceRequest{
-		Env:            append(mapEnvsToClientEnvs(plan.Env, false), mapEnvsToClientEnvs(plan.EnvSecret, true)...),
-		Command:        plan.Commands,
-		Args:           plan.Args,
-		UniqueTopicID:  topicId.String(),
-		Tag:            plan.Tag.ValueString(),
-		OrganizationID: organization.ID,
-	}
-
-	_, err = r.client.UpdateClusterInstance(plan.Id.ValueString(), updateRequest)
+	instance, err := r.client.GetClusterInstance(plan.Id.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to update instance.",
+			"Coudnt fetch instance by provided id.",
 			err.Error(),
 		)
 		return
 	}
 
-	deployed, err := r.client.WaitForDeployedEvent(topicId.String())
-
-	if err != nil || !deployed {
+	order, err := r.client.GetClusterInstanceOrder(instance.ActiveOrder)
+	if err != nil {
 		resp.Diagnostics.AddError(
-			"Instance deployment failed",
+			"Instance doesn't have provisioned deployments.",
 			err.Error(),
 		)
 		return
 	}
 
-	// Save updated data into Terraform state
+	envs := append(mapEnvsToClientEnvs(plan.Env, false), mapEnvsToClientEnvs(plan.EnvSecret, true)...)
+
+	argsEqual := reflect.DeepEqual(order.ClusterInstanceConfiguration.Args, plan.Args)
+	commandEqual := reflect.DeepEqual(order.ClusterInstanceConfiguration.Command, plan.Commands)
+	envEqual := reflect.DeepEqual(envs, order.ClusterInstanceConfiguration.Env)
+	tagEqual := plan.Tag.ValueString() == order.ClusterInstanceConfiguration.Tag
+
+	if !argsEqual || !commandEqual || !envEqual || !tagEqual {
+		topicId := uuid.New()
+
+		updateRequest := client.UpdateInstanceRequest{
+			Env:            envs,
+			Command:        plan.Commands,
+			Args:           plan.Args,
+			UniqueTopicID:  topicId.String(),
+			Tag:            plan.Tag.ValueString(),
+			OrganizationID: organization.ID,
+		}
+
+		_, err = r.client.UpdateClusterInstance(plan.Id.ValueString(), updateRequest)
+		if err != nil {
+			resp.Diagnostics.AddError(
+				"Unable to update instance.",
+				err.Error(),
+			)
+			return
+		}
+
+		_, err = r.client.WaitForDeployedEvent(topicId.String())
+
+		if err != nil {
+			resp.Diagnostics.AddError(
+				"Instance deployment failed",
+				err.Error(),
+			)
+			return
+		}
+	}
+
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -477,10 +481,8 @@ func (r *InstanceResource) Update(ctx context.Context, req resource.UpdateReques
 
 func (r *InstanceResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	tflog.Debug(ctx, "Preparing to delete item resource")
-	// Retrieve values from state
 	var state InstanceResourceModel
 
-	// Read Terraform prior state data into the model
 	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 
@@ -489,7 +491,7 @@ func (r *InstanceResource) Delete(ctx context.Context, req resource.DeleteReques
 	}
 
 	_, err := r.client.CloseClusterInstance(state.Id.ValueString())
-	if err != nil {
+	if err != nil && err.Error() != "Instance already closed" {
 		resp.Diagnostics.AddError(
 			"Unable to destroy Instance",
 			err.Error(),
@@ -501,71 +503,4 @@ func (r *InstanceResource) Delete(ctx context.Context, req resource.DeleteReques
 
 func (r *InstanceResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
-}
-
-func mapPortToPortModel(portList []Port) []client.Port {
-	ports := make([]client.Port, len(portList))
-	for _, pm := range portList {
-		exposedPort := int(pm.ContainerPort.ValueInt64())
-		if pm.ExposedPort.ValueInt64() != 0 {
-			exposedPort = int(pm.ExposedPort.ValueInt64())
-		}
-
-		port := client.Port{
-			ContainerPort: int(pm.ContainerPort.ValueInt64()),
-			ExposedPort:   exposedPort,
-		}
-		ports = append(ports, port)
-	}
-	return ports
-}
-
-func mapModelPortToPort(portList []client.Port) []Port {
-	ports := make([]Port, len(portList))
-	for _, pm := range portList {
-		port := Port{
-			ContainerPort: types.Int64Value(int64(pm.ContainerPort)),
-			ExposedPort:   types.Int64Value(int64(pm.ExposedPort)),
-		}
-		ports = append(ports, port)
-	}
-	return ports
-}
-
-func mapEnvsToClientEnvs(envList []Env, isSecret bool) []client.Env {
-	clientEnvs := make([]client.Env, 0, len(envList))
-	for _, env := range envList {
-		clientEnv := client.Env{
-			Value:    env.Key.ValueString() + "=" + env.Value.ValueString(),
-			IsSecret: isSecret,
-		}
-		clientEnvs = append(clientEnvs, clientEnv)
-	}
-	return clientEnvs
-}
-
-func mapClientEnvsToEnvs(clientEnvs []client.Env, isSecret bool) []Env {
-	envList := make([]Env, 0, len(clientEnvs))
-
-	for _, clientEnv := range clientEnvs {
-		if clientEnv.IsSecret != isSecret {
-			continue
-		}
-
-		split := strings.SplitN(clientEnv.Value, "=", 2)
-		keyString, valueString := split[0], split[1]
-
-		newEnv := Env{
-			Key:   types.StringValue(keyString),
-			Value: types.StringValue(valueString),
-		}
-
-		envList = append(envList, newEnv)
-	}
-
-	if len(envList) == 0 {
-		return nil
-	}
-
-	return envList
 }

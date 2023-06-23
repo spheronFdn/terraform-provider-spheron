@@ -3,14 +3,14 @@ package provider
 import (
 	"context"
 
+	"terraform-provider-spheron/internal/client"
+
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"github.com/spheron/terraform-provider-spheron/internal/client"
 )
 
-// Ensure provider defined types fully satisfy framework interfaces.
 var _ datasource.DataSource = &OrganizationDataSource{}
 
 func NewOrganizationDataSource() datasource.DataSource {
@@ -47,7 +47,6 @@ func (d *OrganizationDataSource) Schema(ctx context.Context, req datasource.Sche
 }
 
 func (d *OrganizationDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
-	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
 		return
 	}
@@ -64,7 +63,6 @@ func (d *OrganizationDataSource) Read(ctx context.Context, req datasource.ReadRe
 	tflog.Debug(ctx, "Preparing to read item data source.")
 	var state SpheronDataSourceModel
 
-	// Read Terraform configuration data into the model
 	resp.Diagnostics.Append(req.Config.Get(ctx, &state)...)
 
 	if resp.Diagnostics.HasError() {
@@ -80,13 +78,11 @@ func (d *OrganizationDataSource) Read(ctx context.Context, req datasource.ReadRe
 		return
 	}
 
-	// Map response body to model
 	state = SpheronDataSourceModel{
 		ID:   types.StringValue(organization.ID),
 		Name: types.StringValue(organization.Profile.Name),
 	}
 
-	// Set state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 	tflog.Debug(ctx, "Finished reading item data source", map[string]any{"success": true})
 }

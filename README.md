@@ -55,7 +55,7 @@ To test provider locally add .terraformrc file to your root directory (`~/.terra
 ```
 provider_installation {
   dev_overrides {
-    "spheron/spheron" = "/Users/ilija/go/bin/"
+    "spheron/spheron" = "/Users/<user>/go/bin/"
   }
   direct {}
 }

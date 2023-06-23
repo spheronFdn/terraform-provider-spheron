@@ -228,19 +228,19 @@ func (api *SpheronApi) GetClusterInstance(id string) (Instance, error) {
 	return response.Instance, nil
 }
 
-func (api *SpheronApi) WaitForDeployedEvent(topicID string) (bool, error) {
+func (api *SpheronApi) WaitForDeployedEvent(topicID string) (string, error) {
 	url := fmt.Sprintf(api.spheronApiUrl+"/v1/subscribe?sessionId=%s", topicID)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+api.token)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	defer resp.Body.Close()
 
@@ -248,7 +248,7 @@ func (api *SpheronApi) WaitForDeployedEvent(topicID string) (bool, error) {
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			return false, err
+			return "", err
 		}
 
 		if strings.HasPrefix(line, "event: message") {
@@ -256,15 +256,15 @@ func (api *SpheronApi) WaitForDeployedEvent(topicID string) (bool, error) {
 			fmt.Print("DATA:", data)
 
 			if err != nil {
-				return false, err
+				return "", err
 			}
 
 			if strings.Contains(data, `"type":2`) {
-				return strings.Contains(data, `"deploymentStatus":"Deployed"`), nil
+				return data, nil
 			}
 
 			if strings.Contains(data, `"type":3`) {
-				return false, nil
+				return "", nil
 			}
 		}
 	}

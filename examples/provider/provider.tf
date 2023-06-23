@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     spheron = {
-      version = "0.1"
+      version = "1.0.0"
       source  = "spheron/spheron"
     }
   }

@@ -10,12 +10,12 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 
+	"terraform-provider-spheron/internal/client"
+
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"github.com/spheron/terraform-provider-spheron/internal/client"
 )
 
-// Ensure DomainResource satisfies the required interfaces
 var _ resource.Resource = &DomainResource{}
 var _ resource.ResourceWithImportState = &DomainResource{}
 
@@ -82,7 +82,6 @@ func (r *DomainResource) Schema(ctx context.Context, req resource.SchemaRequest,
 }
 
 func (r *DomainResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
 		return
 	}
@@ -118,7 +117,7 @@ func (r *DomainResource) Create(ctx context.Context, req resource.CreateRequest,
 
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to create domain for instance",
+			"Unable to create domain for instance111",
 			err.Error(),
 		)
 		return
@@ -128,7 +127,7 @@ func (r *DomainResource) Create(ctx context.Context, req resource.CreateRequest,
 
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Unable to create domain for instance",
+			"Unable to create domain for instance1112222",
 			err.Error(),
 		)
 		return
@@ -138,8 +137,8 @@ func (r *DomainResource) Create(ctx context.Context, req resource.CreateRequest,
 
 	if url == "" {
 		resp.Diagnostics.AddError(
-			"Unable to create domain for instance",
-			"Unable to create domain for instance",
+			"Unable to create domain for instance333, no urls",
+			"Unable to create domain for instance333",
 		)
 		return
 	}
@@ -159,7 +158,6 @@ func (r *DomainResource) Create(ctx context.Context, req resource.CreateRequest,
 		return
 	}
 
-	// populate the state from the domain
 	plan.ID = types.StringValue(domain.ID)
 	plan.Verified = types.BoolValue(domain.Verified)
 
@@ -173,7 +171,7 @@ func (r *DomainResource) Create(ctx context.Context, req resource.CreateRequest,
 func (r *DomainResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state DomainResourceModel
 	tflog.Debug(ctx, "Preparing to read item resource")
-	// Get current state
+
 	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -190,16 +188,25 @@ func (r *DomainResource) Read(ctx context.Context, req resource.ReadRequest, res
 
 	domains, err := r.client.GetClusterInstanceDomains(state.InstanceID.ValueString())
 	if err != nil {
-		fmt.Println("Error:", err)
+		resp.Diagnostics.AddError(
+			"Coudn't fetch instance domains for provided instance id.",
+			err.Error(),
+		)
 		return
 	}
 
 	instance, err := r.client.GetClusterInstance(state.InstanceID.ValueString())
 	if err != nil {
 		resp.Diagnostics.AddError(
-			"Coudnt fetch instance for specified domain.",
+			"Coudn't fetch instance for specified domain.",
 			err.Error(),
 		)
+		return
+	}
+
+	if instance.State == "Closed" || instance.ActiveOrder == "" {
+		resp.State.RemoveResource(ctx)
+		resp.Diagnostics.AddWarning("Instance domain was attached to is closed", fmt.Sprintf("Domain %s is attached to closed instance. Applying will attach domain to redeployed instance.", state.Name.ValueString()))
 		return
 	}
 
@@ -228,14 +235,12 @@ func (r *DomainResource) Read(ctx context.Context, req resource.ReadRequest, res
 	state.Verified = types.BoolValue(domain.Verified)
 	state.Type = types.StringValue(string(domain.Type))
 
-	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *DomainResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var plan DomainResourceModel
 
-	// Retrieve values from plan
 	diags := req.Plan.Get(ctx, &plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -327,54 +332,4 @@ func (r *DomainResource) Delete(ctx context.Context, req resource.DeleteRequest,
 
 func (r *DomainResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
-}
-
-func isValidDomainType(value string) bool {
-	switch client.DomainTypeEnum(value) {
-	case client.DomainTypeDomain, client.DomainTypeSubdomain:
-		return true
-	}
-	return false
-}
-
-func getInstanceDeploymentURL(input client.InstanceOrder, desiredPort int) string {
-	if input.ProtocolData != nil && input.ProtocolData.ProviderHost != "" {
-		for _, port := range input.ClusterInstanceConfiguration.Ports {
-			if port.ContainerPort == desiredPort {
-				if port.ExposedPort == 80 && input.URLPreview != "" {
-					return input.URLPreview
-				}
-
-				return fmt.Sprintf("%s:%d", input.ProtocolData.ProviderHost, port.ExposedPort)
-			}
-		}
-	}
-
-	return ""
-}
-
-func getPortFromDeploymentURL(input client.InstanceOrder, urlStr string) (int, error) {
-	if input.ProtocolData != nil && input.ProtocolData.ProviderHost != "" {
-		for _, port := range input.ClusterInstanceConfiguration.Ports {
-			if urlStr == input.URLPreview && port.ExposedPort == 80 {
-				return port.ContainerPort, nil
-			}
-
-			expectedURL := fmt.Sprintf("%s:%d", input.ProtocolData.ProviderHost, port.ExposedPort)
-			if urlStr == expectedURL {
-				return port.ContainerPort, nil
-			}
-		}
-	}
-
-	return 0, fmt.Errorf("no matching port found for the provided URL")
-}
-
-func findDomainByID(domains []client.Domain, id string) (client.Domain, error) {
-	for _, domain := range domains {
-		if domain.ID == id {
-			return domain, nil
-		}
-	}
-	return client.Domain{}, fmt.Errorf("Domain with ID %s not found", id)
 }
