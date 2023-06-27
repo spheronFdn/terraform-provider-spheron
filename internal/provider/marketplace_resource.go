@@ -3,15 +3,23 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/google/uuid"
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/objectplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/setplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 
 	"terraform-provider-spheron/internal/client"
 
@@ -19,6 +27,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
+// Ensure provider defined types fully satisfy framework interfaces.
 var _ resource.Resource = &MarketplaceInstanceResource{}
 var _ resource.ResourceWithImportState = &MarketplaceInstanceResource{}
 
@@ -26,17 +35,22 @@ func NewMarketplaceInstanceResource() resource.Resource {
 	return &MarketplaceInstanceResource{}
 }
 
+// ExampleResource defines the resource implementation.
 type MarketplaceInstanceResource struct {
 	client *client.SpheronApi
 }
 
+// ExampleResourceModel describes the resource data model.
 type MarketplaceInstanceResourceModel struct {
-	Region       types.String `tfsdk:"region"`
-	Name         types.String `tfsdk:"name"`
-	MachineImage types.String `tfsdk:"machine_image"`
-	Ports        types.List   `tfsdk:"ports"`
-	Env          types.Set    `tfsdk:"env"`
-	Id           types.String `tfsdk:"id"`
+	Region            types.String `tfsdk:"region"`
+	Name              types.String `tfsdk:"name"`
+	MachineImage      types.String `tfsdk:"machine_image"`
+	Ports             types.List   `tfsdk:"ports"`
+	Env               types.Set    `tfsdk:"env"`
+	Id                types.String `tfsdk:"id"`
+	Storage           types.Int64  `tfsdk:"storage"`
+	Replicas          types.Int64  `tfsdk:"replicas"`
+	PersistentStorage types.Object `tfsdk:"persistent_storage"`
 }
 
 func (r *MarketplaceInstanceResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -45,7 +59,8 @@ func (r *MarketplaceInstanceResource) Metadata(ctx context.Context, req resource
 
 func (r *MarketplaceInstanceResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		MarkdownDescription: "Marketplace app resource",
+		// This description is used by the documentation generator and the language server.
+		MarkdownDescription: "Instnce resource",
 
 		Attributes: map[string]schema.Attribute{
 			"region": schema.StringAttribute{
@@ -67,6 +82,67 @@ func (r *MarketplaceInstanceResource) Schema(ctx context.Context, req resource.S
 				Required:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
+				},
+			},
+			"storage": schema.Int64Attribute{
+				MarkdownDescription: "Instance storage in GB. Value cannot exceed 1024GB",
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
+					int64validator.AtMost(1024),
+				},
+				Required: true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.RequiresReplace(),
+				},
+			},
+			"replicas": schema.Int64Attribute{
+				MarkdownDescription: "Number of instance replicas.",
+				Validators: []validator.Int64{
+					int64validator.AtLeast(1),
+					int64validator.AtMost(20),
+				},
+				Required: true,
+				PlanModifiers: []planmodifier.Int64{
+					int64planmodifier.RequiresReplace(),
+				},
+			},
+			"persistent_storage": schema.SingleNestedAttribute{
+				MarkdownDescription: "Persistent storage that will be attached to the instance.",
+				Attributes: map[string]schema.Attribute{
+					"class": schema.StringAttribute{
+						MarkdownDescription: "Storage class. Available classes are HDD, SSD and NVMe",
+						Required:            true,
+						Validators: []validator.String{stringvalidator.OneOf(
+							"HDD",
+							"SSD",
+							"NVMe",
+						)},
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.RequiresReplace(),
+						},
+					},
+					"mount_point": schema.StringAttribute{
+						MarkdownDescription: "Attachement point used fot attaching persistent storage.",
+						Required:            true,
+						PlanModifiers: []planmodifier.String{
+							stringplanmodifier.RequiresReplace(),
+						},
+					},
+					"size": schema.Int64Attribute{
+						MarkdownDescription: "Persistent storage in GB. Value cannot exceed 1024GB",
+						Required:            true,
+						Validators: []validator.Int64{
+							int64validator.AtLeast(1),
+							int64validator.AtMost(1024),
+						},
+						PlanModifiers: []planmodifier.Int64{
+							int64planmodifier.RequiresReplace(),
+						},
+					},
+				},
+				Optional: true,
+				PlanModifiers: []planmodifier.Object{
+					objectplanmodifier.RequiresReplace(),
 				},
 			},
 			"env": schema.SetNestedAttribute{
@@ -205,6 +281,25 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 		return
 	}
 
+	var customSpecs = client.CustomInstanceSpecs{
+		Storage: fmt.Sprintf("%dGi", int(plan.Storage.ValueInt64())),
+	}
+
+	if !plan.PersistentStorage.IsNull() {
+		var persistentStorage PersistentStorage
+		opts := basetypes.ObjectAsOptions{}
+
+		plan.PersistentStorage.As(ctx, &persistentStorage, opts)
+
+		value, _ := GetPersistentStorageClassEnum(persistentStorage.Class.ValueString())
+
+		customSpecs.PersistentStorage = client.PersistentStorage{
+			Class:      value,
+			MountPoint: persistentStorage.MountPoint.ValueString(),
+			Size:       fmt.Sprintf("%dGi", int(persistentStorage.Size.ValueInt64())),
+		}
+	}
+
 	instanceConfig := client.CreateInstanceFromMarketplaceRequest{
 		TemplateID:           chosenMarketplaceApp.ID,
 		EnvironmentVariables: deploymentEnv,
@@ -212,6 +307,8 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 		AkashImageID:         chosenMachineID,
 		UniqueTopicID:        topicId.String(),
 		Region:               plan.Region.ValueString(),
+		InstanceCount:        int(plan.Replicas.ValueInt64()),
+		CustomInstanceSpecs:  customSpecs,
 	}
 
 	response, err := r.client.CreateClusterInstanceFromTemplate(instanceConfig)
@@ -258,6 +355,7 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 func (r *MarketplaceInstanceResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state MarketplaceInstanceResourceModel
 	tflog.Debug(ctx, "Preparing to read item resource.")
+	// Get current state
 	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -302,6 +400,7 @@ func (r *MarketplaceInstanceResource) Read(ctx context.Context, req resource.Rea
 		state.Region = types.StringValue("")
 		state.Name = types.StringValue(cluster.Name)
 
+		// Save updated data into Terraform state
 		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 
 		return
@@ -323,17 +422,47 @@ func (r *MarketplaceInstanceResource) Read(ctx context.Context, req resource.Rea
 		state.Env = envs
 	}
 
+	if order.ClusterInstanceConfiguration.AgreedMachineImage.PersistentStorage != nil &&
+		order.ClusterInstanceConfiguration.AgreedMachineImage.PersistentStorage.Class != "" {
+		var pStorage = order.ClusterInstanceConfiguration.AgreedMachineImage.PersistentStorage
+
+		psTypes := make(map[string]attr.Type)
+		psValues := make(map[string]attr.Value)
+
+		psTypes["class"] = types.StringType
+		psTypes["mount_point"] = types.StringType
+		psTypes["size"] = types.Int64Type
+
+		value, _ := GetStorageClassFromValue(pStorage.Class)
+
+		psValues["class"] = types.StringValue(value)
+		psValues["mount_point"] = types.StringValue(pStorage.MountPoint)
+
+		numberStr := pStorage.Size[:len(pStorage.Size)-2] // Remove the last two characters ("Gi")
+		number, _ := strconv.Atoi(numberStr)
+		psValues["size"] = types.Int64Value(int64(number))
+
+		state.PersistentStorage = types.ObjectValueMust(psTypes, psValues)
+	}
+
+	numberStr := order.ClusterInstanceConfiguration.AgreedMachineImage.Storage[:len(order.ClusterInstanceConfiguration.AgreedMachineImage.Storage)-2] // Remove the last two characters ("Gi")
+	number, _ := strconv.Atoi(numberStr)
+	state.Storage = types.Int64Value(int64(number))
+
+	state.Replicas = types.Int64Value(int64(order.ClusterInstanceConfiguration.InstanceCount))
 	state.Ports = ports
 	state.MachineImage = types.StringValue(order.ClusterInstanceConfiguration.AgreedMachineImage.MachineType)
 	state.Region = types.StringValue(order.ClusterInstanceConfiguration.Region)
 	state.Name = types.StringValue(cluster.Name)
 
+	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *MarketplaceInstanceResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var plan MarketplaceInstanceResourceModel
 
+	// Retrieve values from plan
 	diags := req.Plan.Get(ctx, &plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {

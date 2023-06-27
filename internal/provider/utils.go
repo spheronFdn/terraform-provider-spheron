@@ -234,7 +234,7 @@ func isValidDomainType(value string) bool {
 }
 
 func getPortFromDeploymentURL(input client.InstanceOrder, urlStr string) (int, error) {
-	if input.ProtocolData != nil && input.ProtocolData.ProviderHost != "" {
+	if (input.ProtocolData != nil && input.ProtocolData.ProviderHost != "") || input.URLPreview != "" {
 		for _, port := range input.ClusterInstanceConfiguration.Ports {
 			if urlStr == input.URLPreview && port.ExposedPort == 80 {
 				return port.ContainerPort, nil
@@ -273,4 +273,31 @@ func getInstanceDeploymentURL(input client.InstanceOrder, desiredPort int) strin
 	}
 
 	return ""
+}
+
+var persistentStorageClassMap = map[string]string{
+	"HDD":  "beta1",
+	"SSD":  "beta2",
+	"NVMe": "beta3",
+}
+
+func GetPersistentStorageClassEnum(key string) (string, error) {
+	value, ok := persistentStorageClassMap[key]
+	if !ok {
+		return "", fmt.Errorf("Storage class: %s is not supported. Supported values are: HDD, SSD and NVMe.", value)
+	}
+	return value, nil
+}
+
+func GetStorageClassFromValue(value string) (string, error) {
+	reverseMap := make(map[string]string)
+	for key, val := range persistentStorageClassMap {
+		reverseMap[val] = key
+	}
+
+	class, ok := reverseMap[value]
+	if !ok {
+		return "", fmt.Errorf("value '%s' is not a valid storage class", value)
+	}
+	return class, nil
 }

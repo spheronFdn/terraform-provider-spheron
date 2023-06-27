@@ -42,10 +42,13 @@ resource "spheron_marketplace_instance" "market_instance_test" {
 - `machine_image` (String) Machine image name which should be used for deploying instance.
 - `name` (String) The name of the marketplace app.
 - `region` (String) Region to which to deploy instance.
+- `replicas` (Number) Number of instance replicas.
+- `storage` (Number) Instance storage in GB. Value cannot exceed 1024GB
 
 ### Optional
 
 - `env` (Attributes Set) The list of environmetnt variables. NOTE: Some marketplace apps have required env variables that must be provided. (see [below for nested schema](#nestedatt--env))
+- `persistent_storage` (Attributes) Persistent storage that will be attached to the instance. (see [below for nested schema](#nestedatt--persistent_storage))
 
 ### Read-Only
 
@@ -59,6 +62,16 @@ Required:
 
 - `key` (String) Environment variable key.
 - `value` (String) Environment variable value.
+
+
+<a id="nestedatt--persistent_storage"></a>
+### Nested Schema for `persistent_storage`
+
+Required:
+
+- `class` (String) Storage class. Available classes are HDD, SSD and NVMe
+- `mount_point` (String) Attachement point used fot attaching persistent storage.
+- `size` (Number) Persistent storage in GB. Value cannot exceed 1024GB
 
 
 <a id="nestedatt--ports"></a>

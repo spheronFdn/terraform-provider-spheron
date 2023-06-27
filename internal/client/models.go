@@ -57,6 +57,20 @@ type InstanceConfiguration struct {
 	Args                  []string            `json:"args"`
 	Region                string              `json:"region"`
 	AkashMachineImageName string              `json:"akashMachineImageName"`
+	CustomInstanceSpecs   CustomInstanceSpecs `json:"customInstanceSpecs"`
+}
+
+type CustomInstanceSpecs struct {
+	CPU               string            `json:"cpu,omitempty"`
+	Memory            string            `json:"memory,omitempty"`
+	PersistentStorage PersistentStorage `json:"persistentStorage,omitempty"`
+	Storage           string            `json:"storage"`
+}
+
+type PersistentStorage struct {
+	Class      string `json:"class,omitempty"`
+	MountPoint string `json:"mountPoint,omitempty"`
+	Size       string `json:"size,omitempty"`
 }
 
 type UpdateInstanceRequest struct {
@@ -116,13 +130,17 @@ type Instance struct {
 	ActiveOrder            string           `json:"activeOrder"`
 	LatestURLPreview       string           `json:"latestUrlPreview"`
 	AgreedMachineImageType MachineImageType `json:"agreedMachineImageType"`
+	RetrievableAkt         int              `json:"retrievableAkt"`
+	WithdrawnAkt           int              `json:"withdrawnAkt"`
 	HealthCheck            HealthCheck      `json:"healthCheck"`
 	CreatedAt              time.Time        `json:"createdAt"`
 	UpdatedAt              time.Time        `json:"updatedAt"`
 }
 
 type MachineImageType struct {
-	MachineType string `json:"machineType"`
+	MachineType       string             `json:"machineType"`
+	Storage           string             `json:"storage"`
+	PersistentStorage *PersistentStorage `json:"persistentStorage,omitempty"`
 }
 
 type HealthCheck struct {
@@ -172,18 +190,15 @@ type ProtocolData struct {
 }
 
 type ClusterInstanceConfiguration struct {
-	Image              string             `json:"image"`
-	Tag                string             `json:"tag"`
-	Ports              []Port             `json:"ports"`
-	Env                []Env              `json:"env"`
-	Command            []string           `json:"command"`
-	Args               []string           `json:"args"`
-	Region             string             `json:"region"`
-	AgreedMachineImage AgreedMachineImage `json:"agreedMachineImage"`
-}
-
-type AgreedMachineImage struct {
-	MachineType string `json:"machineType"`
+	Image              string           `json:"image"`
+	Tag                string           `json:"tag"`
+	Ports              []Port           `json:"ports"`
+	Env                []Env            `json:"env"`
+	Command            []string         `json:"command"`
+	Args               []string         `json:"args"`
+	Region             string           `json:"region"`
+	AgreedMachineImage MachineImageType `json:"agreedMachineImage"`
+	InstanceCount      int              `json:"instanceCount"`
 }
 
 type MarketplaceApp struct {
@@ -210,6 +225,8 @@ type CreateInstanceFromMarketplaceRequest struct {
 	AkashImageID         string                          `json:"akashImageId"`
 	UniqueTopicID        string                          `json:"uniqueTopicId,omitempty"`
 	Region               string                          `json:"region"`
+	CustomInstanceSpecs  CustomInstanceSpecs             `json:"customInstanceSpecs"`
+	InstanceCount        int                             `json:"instanceCount"`
 }
 
 type MarketplaceDeploymentVariable struct {

@@ -29,7 +29,7 @@ type SpheronProviderModel struct {
 }
 
 func (p *SpheronProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
-	resp.TypeName = "spherontest"
+	resp.TypeName = "spheron"
 	resp.Version = p.version
 }
 

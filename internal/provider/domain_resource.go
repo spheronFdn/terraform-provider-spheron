@@ -212,8 +212,8 @@ func (r *DomainResource) Read(ctx context.Context, req resource.ReadRequest, res
 
 	order, err := r.client.GetClusterInstanceOrder(instance.ActiveOrder)
 	if err != nil {
-		resp.Diagnostics.AddError(
-			"Instance domain is attached to doesn't have provisioned deployments.",
+		resp.State.RemoveResource(ctx)
+		resp.Diagnostics.AddWarning("Instance domain is attached to doesn't have provisioned deployments.",
 			err.Error(),
 		)
 		return
@@ -223,8 +223,8 @@ func (r *DomainResource) Read(ctx context.Context, req resource.ReadRequest, res
 
 	containerPort, err := getPortFromDeploymentURL(order, domain.Link)
 	if err != nil {
-		resp.Diagnostics.AddError(
-			"Instance doesn't have provisioned deployments.",
+		resp.State.RemoveResource(ctx)
+		resp.Diagnostics.AddWarning("Instance doesn't have provisioned deployments.",
 			err.Error(),
 		)
 		return
