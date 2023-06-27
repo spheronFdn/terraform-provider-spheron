@@ -112,5 +112,36 @@ Required:
 - `mount_point` (String) Attachement point used fot attaching persistent storage.
 - `size` (Number) Persistent storage in GB. Value cannot exceed 1024GB
 
+### Available machine images
 
+|name            |cpu|memory|
+|----------------|---|------|
+|Glacies Micro   |2  |1Gi   |
+|Glacies Nano    |2  |0.5Gi |
+|Ventus Micro    |1  |1Gi   |
+|Ignis 2x Large  |16 |64Gi  |
+|Ventus X-Large  |4  |16Gi  |
+|Terra Large     |8  |16Gi  |
+|Ventus Small    |1  |2Gi   |
+|Terra 2x Large  |8  |32Gi  |
+|Terra Nano      |2  |1Gi   |
+|Ventus Medium   |2  |4Gi   |
+|Ventus Nano     |1  |0.5Gi |
+|Glacies Small   |2  |2Gi   |
+|Terra Small     |4  |4Gi   |
+|Ignis Large     |8  |32Gi  |
+|Ventus Large    |2  |8Gi   |
+|Terra Medium    |4  |8Gi   |
+|Ventus 2x Medium|2  |4Gi   |
+|Terra 3x Large  |10 |32Gi  |
+|Ventus 2x Large |4  |8Gi   |
+|Terra Small 1Ti |4  |4Gi   |
+|Terra Large Ti  |8  |16Gi  |
+
+### Available regions
+- us-east
+- us-west
+- us-central
+- eu-west
+- any
 
