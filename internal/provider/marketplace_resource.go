@@ -48,6 +48,8 @@ type MarketplaceInstanceResourceModel struct {
 	Ports             types.List   `tfsdk:"ports"`
 	Env               types.Set    `tfsdk:"env"`
 	Id                types.String `tfsdk:"id"`
+	Cpu               types.String `tfsdk:"cpu"`
+	Memory            types.String `tfsdk:"memory"`
 	Storage           types.Int64  `tfsdk:"storage"`
 	Replicas          types.Int64  `tfsdk:"replicas"`
 	PersistentStorage types.Object `tfsdk:"persistent_storage"`
@@ -72,9 +74,14 @@ func (r *MarketplaceInstanceResource) Schema(ctx context.Context, req resource.S
 			},
 			"machine_image": schema.StringAttribute{
 				MarkdownDescription: "Machine image name which should be used for deploying instance.",
-				Required:            true,
+				Optional:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.UseStateForUnknown(),
+				},
+				Validators: []validator.String{
+					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("memory")),
+					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("cpu")),
 				},
 			},
 			"name": schema.StringAttribute{
@@ -93,6 +100,50 @@ func (r *MarketplaceInstanceResource) Schema(ctx context.Context, req resource.S
 				Required: true,
 				PlanModifiers: []planmodifier.Int64{
 					int64planmodifier.RequiresReplace(),
+				},
+			},
+			"cpu": schema.StringAttribute{
+				MarkdownDescription: "Instance CPU. Value cannot exceed 1024GB",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.UseStateForUnknown(),
+				},
+				Validators: []validator.String{
+					stringvalidator.OneOf(
+						"0.5",
+						"1",
+						"2",
+						"4",
+						"8",
+						"16",
+						"32",
+					),
+					stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("memory")),
+					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("machine_image")),
+				},
+			},
+			"memory": schema.StringAttribute{
+				MarkdownDescription: "Instance Memory in GB.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.UseStateForUnknown(),
+				},
+				Validators: []validator.String{
+					stringvalidator.OneOf(
+						"0.5",
+						"1",
+						"2",
+						"4",
+						"8",
+						"16",
+						"32",
+					),
+					stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("cpu")),
+					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("machine_image")),
 				},
 			},
 			"replicas": schema.Int64Attribute{
@@ -231,24 +282,6 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 		return
 	}
 
-	computeMachines, err := r.client.GetComputeMachines()
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to get fetch available compute machines.",
-			err.Error(),
-		)
-		return
-	}
-
-	chosenMachineID, err := findComputeMachineID(computeMachines, plan.MachineImage.ValueString())
-	if err != nil {
-		resp.Diagnostics.AddError(
-			"Unable to get machine image by provided name.",
-			err.Error(),
-		)
-		return
-	}
-
 	marketplaceApps, err := r.client.GetClusterTemplates()
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -304,12 +337,40 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 		TemplateID:           chosenMarketplaceApp.ID,
 		EnvironmentVariables: deploymentEnv,
 		OrganizationID:       organization.ID,
-		AkashImageID:         chosenMachineID,
 		UniqueTopicID:        topicId.String(),
 		Region:               plan.Region.ValueString(),
 		InstanceCount:        int(plan.Replicas.ValueInt64()),
-		CustomInstanceSpecs:  customSpecs,
 	}
+
+	if !plan.Cpu.IsNull() && !plan.Memory.IsNull() {
+		customSpecs.CPU = plan.Cpu.ValueString()
+		customSpecs.Memory = fmt.Sprintf("%sGi", plan.Memory.ValueString())
+
+		plan.MachineImage = types.StringValue("Custom Plan")
+	} else {
+
+		computeMachines, err := r.client.GetComputeMachines()
+		if err != nil {
+			resp.Diagnostics.AddError(
+				"Unable to get fetch available compute machines.",
+				err.Error(),
+			)
+			return
+		}
+
+		chosenMachineID, err := findComputeMachineID(computeMachines, plan.MachineImage.ValueString())
+		if err != nil {
+			resp.Diagnostics.AddError(
+				"Unable to get machine image by provided name.",
+				err.Error(),
+			)
+			return
+		}
+
+		instanceConfig.AkashImageID = chosenMachineID
+	}
+
+	instanceConfig.CustomInstanceSpecs = customSpecs
 
 	response, err := r.client.CreateClusterInstanceFromTemplate(instanceConfig)
 
@@ -342,6 +403,20 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 
 	plan.Id = types.StringValue(response.ClusterInstanceID)
 	plan.Ports = types.ListValueMust(types.ObjectType{AttrTypes: getPortAtrTypes()}, mapModelPortToPortValue(ports))
+
+	if plan.Cpu.IsNull() && plan.Memory.IsNull() {
+		order, err := r.client.GetClusterInstanceOrder(response.ClusterInstanceOrderID)
+		if err != nil {
+			resp.Diagnostics.AddError(
+				"Instance doesn't have provisioned deployments.",
+				err.Error(),
+			)
+			return
+		}
+
+		plan.Memory = types.StringValue(RemoveGiSuffix(order.ClusterInstanceConfiguration.AgreedMachineImage.Memory))
+		plan.Cpu = types.StringValue(fmt.Sprint(order.ClusterInstanceConfiguration.AgreedMachineImage.Cpu))
+	}
 
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
@@ -449,6 +524,8 @@ func (r *MarketplaceInstanceResource) Read(ctx context.Context, req resource.Rea
 	number, _ := strconv.Atoi(numberStr)
 	state.Storage = types.Int64Value(int64(number))
 
+	state.Memory = types.StringValue(RemoveGiSuffix(order.ClusterInstanceConfiguration.AgreedMachineImage.Memory))
+	state.Cpu = types.StringValue(fmt.Sprint(order.ClusterInstanceConfiguration.AgreedMachineImage.Cpu))
 	state.Replicas = types.Int64Value(int64(order.ClusterInstanceConfiguration.InstanceCount))
 	state.Ports = ports
 	state.MachineImage = types.StringValue(order.ClusterInstanceConfiguration.AgreedMachineImage.MachineType)

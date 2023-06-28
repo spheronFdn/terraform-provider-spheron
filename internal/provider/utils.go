@@ -301,3 +301,10 @@ func GetStorageClassFromValue(value string) (string, error) {
 	}
 	return class, nil
 }
+
+func RemoveGiSuffix(input string) string {
+	if len(input) < 2 {
+		return input
+	}
+	return input[:len(input)-2]
+}

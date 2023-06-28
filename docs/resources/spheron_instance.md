@@ -47,7 +47,6 @@ resource "spheron_instance" "instance_test" {
 
 - `cluster_name` (String) The name of the cluster.
 - `image` (String) The docker image to deploy. Currently only public dockerhub images are supported.
-- `machine_image` (String) Machine image name which should be used for deploying instance.
 - `ports` (Attributes List) The list of port mappings (see [below for nested schema](#nestedatt--ports))
 - `region` (String) Region to which to deploy instance.
 - `replicas` (Number) Number of instance replicas.
@@ -58,10 +57,13 @@ resource "spheron_instance" "instance_test" {
 
 - `args` (List of String) List of params for docker CMD command.
 - `commands` (List of String) List of executables for docker CMD command.
+- `cpu` (String) Instance CPU. Value cannot exceed 1024GB
 - `env` (Attributes Set) The list of environmetnt variables. (see [below for nested schema](#nestedatt--env))
 - `env_secret` (Attributes Set) The list of secret environmetnt variables. (see [below for nested schema](#nestedatt--env_secret))
 - `health_check` (Attributes) Path and container port on which health check should be done. (see [below for nested schema](#nestedatt--health_check))
 - `id` (String) Id of the instance.
+- `machine_image` (String) Machine image name which should be used for deploying instance.
+- `memory` (String) Instance Memory in GB.
 - `persistent_storage` (Attributes) Persistent storage that will be attached to the instance. (see [below for nested schema](#nestedatt--persistent_storage))
 
 <a id="nestedatt--ports"></a>

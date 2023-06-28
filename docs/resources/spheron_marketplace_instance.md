@@ -39,7 +39,6 @@ resource "spheron_marketplace_instance" "market_instance_test" {
 
 ### Required
 
-- `machine_image` (String) Machine image name which should be used for deploying instance.
 - `name` (String) The name of the marketplace app.
 - `region` (String) Region to which to deploy instance.
 - `replicas` (Number) Number of instance replicas.
@@ -47,7 +46,10 @@ resource "spheron_marketplace_instance" "market_instance_test" {
 
 ### Optional
 
+- `cpu` (String) Instance CPU. Value cannot exceed 1024GB
 - `env` (Attributes Set) The list of environmetnt variables. NOTE: Some marketplace apps have required env variables that must be provided. (see [below for nested schema](#nestedatt--env))
+- `machine_image` (String) Machine image name which should be used for deploying instance.
+- `memory` (String) Instance Memory in GB.
 - `persistent_storage` (Attributes) Persistent storage that will be attached to the instance. (see [below for nested schema](#nestedatt--persistent_storage))
 
 ### Read-Only

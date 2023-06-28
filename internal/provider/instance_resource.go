@@ -55,6 +55,8 @@ type InstanceResourceModel struct {
 	Id                types.String `tfsdk:"id"`
 	HealthCheck       types.Object `tfsdk:"health_check"`
 	Storage           types.Int64  `tfsdk:"storage"`
+	Cpu               types.String `tfsdk:"cpu"`
+	Memory            types.String `tfsdk:"memory"`
 	Replicas          types.Int64  `tfsdk:"replicas"`
 	PersistentStorage types.Object `tfsdk:"persistent_storage"`
 }
@@ -114,6 +116,50 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 				Required: true,
 				PlanModifiers: []planmodifier.Int64{
 					int64planmodifier.RequiresReplace(),
+				},
+			},
+			"cpu": schema.StringAttribute{
+				MarkdownDescription: "Instance CPU. Value cannot exceed 1024GB",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.UseStateForUnknown(),
+				},
+				Validators: []validator.String{
+					stringvalidator.OneOf(
+						"0.5",
+						"1",
+						"2",
+						"4",
+						"8",
+						"16",
+						"32",
+					),
+					stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("memory")),
+					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("machine_image")),
+				},
+			},
+			"memory": schema.StringAttribute{
+				MarkdownDescription: "Instance Memory in GB.",
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.UseStateForUnknown(),
+				},
+				Validators: []validator.String{
+					stringvalidator.OneOf(
+						"0.5",
+						"1",
+						"2",
+						"4",
+						"8",
+						"16",
+						"32",
+					),
+					stringvalidator.AlsoRequires(path.MatchRelative().AtParent().AtName("cpu")),
+					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("machine_image")),
 				},
 			},
 			"replicas": schema.Int64Attribute{
@@ -201,9 +247,15 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 			},
 			"machine_image": schema.StringAttribute{
 				MarkdownDescription: "Machine image name which should be used for deploying instance.",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
+					stringplanmodifier.UseStateForUnknown(),
+				},
+				Validators: []validator.String{
+					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("memory")),
+					stringvalidator.ConflictsWith(path.MatchRelative().AtParent().AtName("cpu")),
 				},
 			},
 			"health_check": schema.SingleNestedAttribute{
@@ -335,20 +387,29 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 	topicId := uuid.New()
 
 	instanceConfig := client.InstanceConfiguration{
-		FolderName:            "",
-		Protocol:              client.ClusterProtocolAkash,
-		Image:                 plan.Image.ValueString(),
-		Tag:                   plan.Tag.ValueString(),
-		InstanceCount:         int(plan.Replicas.ValueInt64()),
-		BuildImage:            false,
-		Ports:                 mapPortToPortModel(plan.Ports),
-		Env:                   append(mapEnvsToClientEnvs(plan.Env, false), mapEnvsToClientEnvs(plan.EnvSecret, true)...),
-		Command:               plan.Commands,
-		Args:                  plan.Args,
-		Region:                plan.Region.ValueString(),
-		AkashMachineImageName: plan.MachineImage.ValueString(),
-		CustomInstanceSpecs:   customSpecs,
+		FolderName:    "",
+		Protocol:      client.ClusterProtocolAkash,
+		Image:         plan.Image.ValueString(),
+		Tag:           plan.Tag.ValueString(),
+		InstanceCount: int(plan.Replicas.ValueInt64()),
+		BuildImage:    false,
+		Ports:         mapPortToPortModel(plan.Ports),
+		Env:           append(mapEnvsToClientEnvs(plan.Env, false), mapEnvsToClientEnvs(plan.EnvSecret, true)...),
+		Command:       plan.Commands,
+		Args:          plan.Args,
+		Region:        plan.Region.ValueString(),
 	}
+
+	if !plan.Cpu.IsNull() && !plan.Memory.IsNull() {
+		customSpecs.CPU = plan.Cpu.ValueString()
+		customSpecs.Memory = fmt.Sprintf("%sGi", plan.Memory.ValueString())
+
+		plan.MachineImage = types.StringValue("Custom Plan")
+	} else {
+		instanceConfig.AkashMachineImageName = plan.MachineImage.ValueString()
+	}
+
+	instanceConfig.CustomInstanceSpecs = customSpecs
 
 	createRequest := client.CreateInstanceRequest{
 		OrganizationID:  organization.ID,
@@ -394,6 +455,20 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 			fmt.Sprintf("Instance deployment on cluster %s failed.", plan.ClusterName.ValueString()),
 		)
 		return
+	}
+
+	if plan.Cpu.IsNull() && plan.Memory.IsNull() {
+		order, err := r.client.GetClusterInstanceOrder(response.ClusterInstanceOrderID)
+		if err != nil {
+			resp.Diagnostics.AddError(
+				"Instance doesn't have provisioned deployments.",
+				err.Error(),
+			)
+			return
+		}
+
+		plan.Memory = types.StringValue(RemoveGiSuffix(order.ClusterInstanceConfiguration.AgreedMachineImage.Memory))
+		plan.Cpu = types.StringValue(fmt.Sprint(order.ClusterInstanceConfiguration.AgreedMachineImage.Cpu))
 	}
 
 	// Map response body to model
@@ -473,9 +548,12 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 	state.Tag = types.StringValue(order.ClusterInstanceConfiguration.Tag)
 	state.Replicas = types.Int64Value(int64(order.ClusterInstanceConfiguration.InstanceCount))
 
-	numberStr := order.ClusterInstanceConfiguration.AgreedMachineImage.Storage[:len(order.ClusterInstanceConfiguration.AgreedMachineImage.Storage)-2] // Remove the last two characters ("Gi")
+	numberStr := RemoveGiSuffix(order.ClusterInstanceConfiguration.AgreedMachineImage.Storage) // Remove the last two characters ("Gi")
 	number, _ := strconv.Atoi(numberStr)
 	state.Storage = types.Int64Value(int64(number))
+
+	state.Memory = types.StringValue(RemoveGiSuffix(order.ClusterInstanceConfiguration.AgreedMachineImage.Memory))
+	state.Cpu = types.StringValue(fmt.Sprint(order.ClusterInstanceConfiguration.AgreedMachineImage.Cpu))
 
 	if instance.HealthCheck.Port != (client.Port{}) {
 		hcTypes := make(map[string]attr.Type)

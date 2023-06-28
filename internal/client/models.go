@@ -140,6 +140,8 @@ type Instance struct {
 type MachineImageType struct {
 	MachineType       string             `json:"machineType"`
 	Storage           string             `json:"storage"`
+	Cpu               float32            `json:"cpu"`
+	Memory            string             `json:"memory"`
 	PersistentStorage *PersistentStorage `json:"persistentStorage,omitempty"`
 }
 
