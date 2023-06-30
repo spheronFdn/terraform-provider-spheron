@@ -37,20 +37,20 @@ resource "spheron_instance" "instance_test" {
     }
   ]
 
-  health_check = {
-    path = "/"
-    port = 8000
-  }
+  # health_check = {
+  #   path = "/test"
+  #   port = 8000
+  # }
 
-  persistent_storage = {
-    class       = "SSD"
-    mount_point = "/etc/data"
-    size        = 5
-  }
+  # persistent_storage = {
+  #   class       = "HDD"
+  #   mount_point = "/etc/data"
+  #   size        = 5
+  # }
 
   storage  = 10
-  cpu      = "1"
-  memory   = "2"
+  cpu      = 10
+  memory   = 2
   replicas = 1
 }
 
@@ -66,8 +66,8 @@ resource "spheron_marketplace_instance" "instance_IPFS_test" {
   }
 
   storage  = 10
-  cpu      = "1"
-  memory   = "2"
+  cpu      = 1
+  memory   = 2
   replicas = 1
 }
 
