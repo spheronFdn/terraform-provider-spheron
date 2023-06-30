@@ -3,6 +3,7 @@ package client
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 type SpheronApi struct {
@@ -21,9 +24,8 @@ type SpheronApi struct {
 
 func NewSpheronApi(token string) (*SpheronApi, error) {
 	api := &SpheronApi{
-		spheronApiUrl: "https://api-dev.spheron.network",
-		// spheronApiUrl: "http://localhost:8080",
-		token: token,
+		spheronApiUrl: "https://api-v2.spheron.network",
+		token:         token,
 	}
 
 	return api, nil
@@ -228,7 +230,7 @@ func (api *SpheronApi) GetClusterInstance(id string) (Instance, error) {
 	return response.Instance, nil
 }
 
-func (api *SpheronApi) WaitForDeployedEvent(topicID string) (string, error) {
+func (api *SpheronApi) WaitForDeployedEvent(ctx context.Context, topicID string) (string, error) {
 	url := fmt.Sprintf(api.spheronApiUrl+"/v1/subscribe?sessionId=%s", topicID)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -253,7 +255,7 @@ func (api *SpheronApi) WaitForDeployedEvent(topicID string) (string, error) {
 
 		if strings.HasPrefix(line, "event: message") {
 			data, err := reader.ReadString('\n')
-			fmt.Print("DATA:", data)
+			tflog.Info(ctx, fmt.Sprintf("%s", data))
 
 			if err != nil {
 				return "", err
@@ -264,7 +266,7 @@ func (api *SpheronApi) WaitForDeployedEvent(topicID string) (string, error) {
 			}
 
 			if strings.Contains(data, `"type":3`) {
-				return "", nil
+				return "", fmt.Errorf("Deployment failed")
 			}
 		}
 	}

@@ -27,7 +27,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-// Ensure provider defined types fully satisfy framework interfaces.
 var _ resource.Resource = &InstanceResource{}
 var _ resource.ResourceWithImportState = &InstanceResource{}
 
@@ -35,12 +34,10 @@ func NewInstanceResource() resource.Resource {
 	return &InstanceResource{}
 }
 
-// ExampleResource defines the resource implementation.
 type InstanceResource struct {
 	client *client.SpheronApi
 }
 
-// ExampleResourceModel describes the resource data model.
 type InstanceResourceModel struct {
 	Image             types.String `tfsdk:"image"`
 	Tag               types.String `tfsdk:"tag"`
@@ -88,7 +85,6 @@ func (r *InstanceResource) Metadata(ctx context.Context, req resource.MetadataRe
 
 func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
 		MarkdownDescription: "Instnce resource",
 
 		Attributes: map[string]schema.Attribute{
@@ -328,7 +324,6 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 }
 
 func (r *InstanceResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
-	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
 		return
 	}
@@ -400,7 +395,7 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		Region:        plan.Region.ValueString(),
 	}
 
-	if !plan.Cpu.IsNull() && !plan.Memory.IsNull() {
+	if plan.MachineImage.ValueString() == "" {
 		customSpecs.CPU = plan.Cpu.ValueString()
 		customSpecs.Memory = fmt.Sprintf("%sGi", plan.Memory.ValueString())
 
@@ -438,7 +433,7 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 
-	eventDataString, err := r.client.WaitForDeployedEvent(topicId.String())
+	eventDataString, err := r.client.WaitForDeployedEvent(ctx, topicId.String())
 
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -457,7 +452,7 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		return
 	}
 
-	if plan.Cpu.IsNull() && plan.Memory.IsNull() {
+	if plan.Cpu.ValueString() == "" || plan.Memory.ValueString() == "" {
 		order, err := r.client.GetClusterInstanceOrder(response.ClusterInstanceOrderID)
 		if err != nil {
 			resp.Diagnostics.AddError(
@@ -471,31 +466,27 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		plan.Cpu = types.StringValue(fmt.Sprint(order.ClusterInstanceConfiguration.AgreedMachineImage.Cpu))
 	}
 
-	// Map response body to model
 	plan.Id = types.StringValue(response.ClusterInstanceID)
 	plan.Ports = mapModelPortToPort(ports)
 
-	// Set state to fully populated data
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	// Save data into Terraform state
 	tflog.Debug(ctx, "Created item resource", map[string]any{"success": true})
 }
 
 func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state InstanceResourceModel
 	tflog.Debug(ctx, "Preparing to read item resource")
-	// Get current state
 	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	if state.Id.IsNull() {
+	if state.Id.ValueString() == "" {
 		resp.Diagnostics.AddError(
 			"Id not provided. Unable to get instance details.",
 			"Id not provided. Unable to get instance details.",
@@ -591,7 +582,6 @@ func (r *InstanceResource) Read(ctx context.Context, req resource.ReadRequest, r
 		state.PersistentStorage = types.ObjectValueMust(psTypes, psValues)
 	}
 
-	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
@@ -618,22 +608,19 @@ func (r *InstanceResource) Update(ctx context.Context, req resource.UpdateReques
 	opts := basetypes.ObjectAsOptions{}
 	plan.HealthCheck.As(ctx, &healthCheck, opts)
 
-	if !healthCheck.Path.IsNull() && !healthCheck.Port.IsNull() {
+	hcUpdate := client.HealthCheckUpdateReq{
+		HealthCheckURL:  healthCheck.Path.ValueString(),
+		HealthCheckPort: int(healthCheck.Port.ValueInt64()),
+	}
 
-		hcUpdate := client.HealthCheckUpdateReq{
-			HealthCheckURL:  healthCheck.Path.ValueString(),
-			HealthCheckPort: int(healthCheck.Port.ValueInt64()),
-		}
+	_, err = r.client.UpdateClusterInstanceHealthCheckInfo(plan.Id.ValueString(), hcUpdate)
 
-		_, err := r.client.UpdateClusterInstanceHealthCheckInfo(plan.Id.ValueString(), hcUpdate)
-
-		if err != nil {
-			resp.Diagnostics.AddError(
-				"Unable to update instance healthchek endpoint.",
-				err.Error(),
-			)
-			return
-		}
+	if err != nil {
+		resp.Diagnostics.AddError(
+			"Unable to update instance healthchek endpoint.",
+			err.Error(),
+		)
+		return
 	}
 
 	instance, err := r.client.GetClusterInstance(plan.Id.ValueString())
@@ -682,7 +669,7 @@ func (r *InstanceResource) Update(ctx context.Context, req resource.UpdateReques
 			return
 		}
 
-		_, err = r.client.WaitForDeployedEvent(topicId.String())
+		_, err = r.client.WaitForDeployedEvent(ctx, topicId.String())
 
 		if err != nil {
 			resp.Diagnostics.AddError(
@@ -693,7 +680,6 @@ func (r *InstanceResource) Update(ctx context.Context, req resource.UpdateReques
 		}
 	}
 
-	// Save updated data into Terraform state
 	diags = resp.State.Set(ctx, plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -704,10 +690,8 @@ func (r *InstanceResource) Update(ctx context.Context, req resource.UpdateReques
 
 func (r *InstanceResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	tflog.Debug(ctx, "Preparing to delete item resource")
-	// Retrieve values from state
 	var state InstanceResourceModel
 
-	// Read Terraform prior state data into the model
 	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 

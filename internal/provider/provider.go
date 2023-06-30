@@ -18,9 +18,6 @@ import (
 var _ provider.Provider = &SpheronProvider{}
 
 type SpheronProvider struct {
-	// version is set to the provider version on release, "dev" when the
-	// provider is built and ran locally, and "test" when running acceptance
-	// testing.
 	version string
 }
 

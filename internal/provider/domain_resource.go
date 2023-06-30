@@ -178,7 +178,7 @@ func (r *DomainResource) Read(ctx context.Context, req resource.ReadRequest, res
 		return
 	}
 
-	if state.ID.IsNull() || state.InstanceID.IsNull() {
+	if state.ID.ValueString() == "" || state.InstanceID.ValueString() == "" {
 		resp.Diagnostics.AddError(
 			"Id or instanceId not provided. Unable to get domain details.",
 			"Id or instanceId not provided. Unable to get domain details.",
