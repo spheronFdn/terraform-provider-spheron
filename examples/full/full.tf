@@ -55,9 +55,9 @@ resource "spheron_instance" "instance_test" {
 }
 
 resource "spheron_marketplace_instance" "instance_IPFS_test" {
-  name = "IPFS"
-  # machine_image = "Ventus Nano"
-  region = "any"
+  name          = "IPFS"
+  machine_image = "Ventus Nano"
+  region        = "any"
 
   persistent_storage = {
     class       = "HDD"
