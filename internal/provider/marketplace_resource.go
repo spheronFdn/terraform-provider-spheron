@@ -27,7 +27,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
-// Ensure provider defined types fully satisfy framework interfaces.
 var _ resource.Resource = &MarketplaceInstanceResource{}
 var _ resource.ResourceWithImportState = &MarketplaceInstanceResource{}
 
@@ -35,12 +34,10 @@ func NewMarketplaceInstanceResource() resource.Resource {
 	return &MarketplaceInstanceResource{}
 }
 
-// ExampleResource defines the resource implementation.
 type MarketplaceInstanceResource struct {
 	client *client.SpheronApi
 }
 
-// ExampleResourceModel describes the resource data model.
 type MarketplaceInstanceResourceModel struct {
 	Region            types.String `tfsdk:"region"`
 	Name              types.String `tfsdk:"name"`
@@ -61,7 +58,6 @@ func (r *MarketplaceInstanceResource) Metadata(ctx context.Context, req resource
 
 func (r *MarketplaceInstanceResource) Schema(ctx context.Context, req resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
-		// This description is used by the documentation generator and the language server.
 		MarkdownDescription: "Instnce resource",
 
 		Attributes: map[string]schema.Attribute{
@@ -75,6 +71,7 @@ func (r *MarketplaceInstanceResource) Schema(ctx context.Context, req resource.S
 			"machine_image": schema.StringAttribute{
 				MarkdownDescription: "Machine image name which should be used for deploying instance.",
 				Optional:            true,
+				Computed:            true,
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 					stringplanmodifier.UseStateForUnknown(),
@@ -222,10 +219,16 @@ func (r *MarketplaceInstanceResource) Schema(ctx context.Context, req resource.S
 						"container_port": schema.Int64Attribute{
 							MarkdownDescription: "Container port that will be exposed.",
 							Computed:            true,
+							PlanModifiers: []planmodifier.Int64{
+								int64planmodifier.UseStateForUnknown(),
+							},
 						},
 						"exposed_port": schema.Int64Attribute{
 							MarkdownDescription: "The port container port will be exposed to. Exposed port will be know and available for use after the deployment.",
 							Computed:            true,
+							PlanModifiers: []planmodifier.Int64{
+								int64planmodifier.UseStateForUnknown(),
+							},
 						},
 					},
 				},
@@ -342,7 +345,7 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 		InstanceCount:        int(plan.Replicas.ValueInt64()),
 	}
 
-	if !plan.Cpu.IsNull() && !plan.Memory.IsNull() {
+	if plan.MachineImage.ValueString() == "" {
 		customSpecs.CPU = plan.Cpu.ValueString()
 		customSpecs.Memory = fmt.Sprintf("%sGi", plan.Memory.ValueString())
 
@@ -382,7 +385,7 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 		return
 	}
 
-	eventDataString, err := r.client.WaitForDeployedEvent(topicId.String())
+	eventDataString, err := r.client.WaitForDeployedEvent(ctx, topicId.String())
 
 	if err != nil {
 		resp.Diagnostics.AddError(
@@ -404,7 +407,7 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 	plan.Id = types.StringValue(response.ClusterInstanceID)
 	plan.Ports = types.ListValueMust(types.ObjectType{AttrTypes: getPortAtrTypes()}, mapModelPortToPortValue(ports))
 
-	if plan.Cpu.IsNull() && plan.Memory.IsNull() {
+	if plan.Cpu.ValueString() == "" || plan.Memory.ValueString() == "" {
 		order, err := r.client.GetClusterInstanceOrder(response.ClusterInstanceOrderID)
 		if err != nil {
 			resp.Diagnostics.AddError(
@@ -430,14 +433,13 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 func (r *MarketplaceInstanceResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var state MarketplaceInstanceResourceModel
 	tflog.Debug(ctx, "Preparing to read item resource.")
-	// Get current state
 	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	if state.Id.IsNull() {
+	if state.Id.ValueString() == "" {
 		resp.Diagnostics.AddError(
 			"Id not provided. Unable to get marketplace instance details.",
 			"Id not provided. Unable to get marketplace instance details.",
@@ -475,7 +477,6 @@ func (r *MarketplaceInstanceResource) Read(ctx context.Context, req resource.Rea
 		state.Region = types.StringValue("")
 		state.Name = types.StringValue(cluster.Name)
 
-		// Save updated data into Terraform state
 		resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 
 		return
@@ -532,14 +533,12 @@ func (r *MarketplaceInstanceResource) Read(ctx context.Context, req resource.Rea
 	state.Region = types.StringValue(order.ClusterInstanceConfiguration.Region)
 	state.Name = types.StringValue(cluster.Name)
 
-	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &state)...)
 }
 
 func (r *MarketplaceInstanceResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var plan MarketplaceInstanceResourceModel
 
-	// Retrieve values from plan
 	diags := req.Plan.Get(ctx, &plan)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {

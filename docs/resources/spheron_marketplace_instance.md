@@ -46,10 +46,10 @@ resource "spheron_marketplace_instance" "market_instance_test" {
 
 ### Optional
 
-- `cpu` (String) Instance CPU. Value cannot exceed 1024GB
+- `cpu` (String) Instance CPU. Available values [0.5, 1, 2, 4, 8, 16, 32].
 - `env` (Attributes Set) The list of environmetnt variables. NOTE: Some marketplace apps have required env variables that must be provided. (see [below for nested schema](#nestedatt--env))
 - `machine_image` (String) Machine image name which should be used for deploying instance.
-- `memory` (String) Instance Memory in GB.
+- `memory` (String) Instance Memory in GB. Available values [0.5, 1, 2, 4, 8, 16, 32].
 - `persistent_storage` (Attributes) Persistent storage that will be attached to the instance. (see [below for nested schema](#nestedatt--persistent_storage))
 
 ### Read-Only
