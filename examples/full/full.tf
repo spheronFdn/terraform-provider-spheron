@@ -49,32 +49,34 @@ resource "spheron_instance" "instance_test" {
   # }
 
   storage  = 10
-  cpu      = 10
-  memory   = 2
-  replicas = 1
-}
-
-resource "spheron_marketplace_instance" "instance_IPFS_test" {
-  name          = "IPFS"
-  machine_image = "Ventus Nano"
-  region        = "any"
-
-  persistent_storage = {
-    class       = "HDD"
-    mount_point = "/etc/data"
-    size        = 2
-  }
-
-  storage  = 10
   cpu      = 1
-  memory   = 2
+  memory   = 1
   replicas = 1
+
+  compute_type = "SPOT"
 }
 
-resource "spheron_domain" "domain_test_ipfs" {
-  name = "test.com"
-  type = "domain"
+# resource "spheron_marketplace_instance" "instance_IPFS_test" {
+#   name          = "IPFS"
+#   machine_image = "Ventus Nano"
+#   region        = "any"
 
-  instance_port = spheron_marketplace_instance.instance_IPFS_test.ports[0].container_port
-  instance_id   = spheron_marketplace_instance.instance_IPFS_test.id
-}
+#   persistent_storage = {
+#     class       = "HDD"
+#     mount_point = "/etc/data"
+#     size        = 2
+#   }
+
+#   storage  = 10
+#   cpu      = 1
+#   memory   = 2
+#   replicas = 1
+# }
+
+# resource "spheron_domain" "domain_test_ipfs" {
+#   name = "test.com"
+#   type = "domain"
+
+#   instance_port = spheron_marketplace_instance.instance_IPFS_test.ports[0].container_port
+#   instance_id   = spheron_marketplace_instance.instance_IPFS_test.id
+# }

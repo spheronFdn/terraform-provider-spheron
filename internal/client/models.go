@@ -41,6 +41,7 @@ type CreateInstanceRequest struct {
 	ClusterName     string                `json:"clusterName"`
 	HealthCheckURL  string                `json:"healthCheckUrl"`
 	HealthCheckPort string                `json:"healthCheckPort"`
+	Scalable        bool                  `json:"scalable"`
 }
 
 type InstanceConfiguration struct {
@@ -61,10 +62,10 @@ type InstanceConfiguration struct {
 }
 
 type CustomInstanceSpecs struct {
-	CPU               string            `json:"cpu,omitempty"`
-	Memory            string            `json:"memory,omitempty"`
-	PersistentStorage PersistentStorage `json:"persistentStorage,omitempty"`
-	Storage           string            `json:"storage"`
+	CPU               string             `json:"cpu,omitempty"`
+	Memory            string             `json:"memory,omitempty"`
+	PersistentStorage *PersistentStorage `json:"persistentStorage,omitempty"`
+	Storage           string             `json:"storage"`
 }
 
 type PersistentStorage struct {

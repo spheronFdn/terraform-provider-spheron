@@ -1,6 +1,6 @@
 # Compute Terraform Provider (Terraform Plugin Framework)
 
-_This template repository is built on the [Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework). 
+\_This template repository is built on the [Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework).
 
 - A resource and a data source (`internal/provider/`),
 - Examples (`examples/`) and generated documentation (`docs/`),
@@ -41,10 +41,6 @@ go mod tidy
 
 Then commit the changes to `go.mod` and `go.sum`.
 
-## Using the provider
-
-Fill this in for each provider
-
 ## Developing the Provider
 
 If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine (see [Requirements](#requirements) above).
@@ -52,6 +48,7 @@ If you wish to work on the provider, you'll first need [Go](http://www.golang.or
 To compile the provider, run `go install`. This will build the provider and put the provider binary in the `$GOPATH/bin` directory.
 
 To test provider locally add .terraformrc file to your root directory (`~/.terraformrc`) and put following content in it:
+
 ```
 provider_installation {
   dev_overrides {

@@ -187,6 +187,10 @@ func mapClientEnvsToEnvs(clientEnvs []client.Env, isSecret bool) []Env {
 		split := strings.SplitN(clientEnv.Value, "=", 2)
 		keyString, valueString := split[0], split[1]
 
+		if keyString == "SPHERON_INSTANCE_ID" {
+			continue
+		}
+
 		newEnv := Env{
 			Key:   types.StringValue(keyString),
 			Value: types.StringValue(valueString),

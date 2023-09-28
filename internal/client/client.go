@@ -11,8 +11,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/hashicorp/terraform-plugin-log/tflog"
 )
 
 type SpheronApi struct {
@@ -255,7 +253,6 @@ func (api *SpheronApi) WaitForDeployedEvent(ctx context.Context, topicID string)
 
 		if strings.HasPrefix(line, "event: message") {
 			data, err := reader.ReadString('\n')
-			tflog.Info(ctx, fmt.Sprintf("%s", data))
 
 			if err != nil {
 				return "", err
