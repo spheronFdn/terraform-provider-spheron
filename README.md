@@ -1,6 +1,6 @@
 # Compute Terraform Provider (Terraform Plugin Framework)
 
-\_This template repository is built on the [Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework).
+This template repository is built on the [Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework).
 
 - A resource and a data source (`internal/provider/`),
 - Examples (`examples/`) and generated documentation (`docs/`),
