@@ -56,6 +56,7 @@ type InstanceResourceModel struct {
 	Memory            types.String `tfsdk:"memory"`
 	Replicas          types.Int64  `tfsdk:"replicas"`
 	PersistentStorage types.Object `tfsdk:"persistent_storage"`
+	ComputeType       types.String `tfsdk:"compute_type"`
 }
 
 type Port struct {
@@ -115,7 +116,7 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 				},
 			},
 			"cpu": schema.StringAttribute{
-				MarkdownDescription: "Instance CPU. Value cannot exceed 1024GB",
+				MarkdownDescription: "Instance CPU. Available values [0.5, 1, 2, 4, 8, 16, 32]",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers: []planmodifier.String{
@@ -137,7 +138,7 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 				},
 			},
 			"memory": schema.StringAttribute{
-				MarkdownDescription: "Instance Memory in GB.",
+				MarkdownDescription: "Instance Memory in GB. Available values [0.5, 1, 2, 4, 8, 16, 32]",
 				Optional:            true,
 				Computed:            true,
 				PlanModifiers: []planmodifier.String{
@@ -311,6 +312,20 @@ func (r *InstanceResource) Schema(ctx context.Context, req resource.SchemaReques
 					objectplanmodifier.RequiresReplace(),
 				},
 			},
+			"compute_type": schema.StringAttribute{
+				MarkdownDescription: "Instance compute type, determining how hardware resources will scale. Available values [SPOT, DEMAND]",
+				Required:            true,
+				Computed:            false,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.RequiresReplace(),
+				},
+				Validators: []validator.String{
+					stringvalidator.OneOf(
+						"SPOT",
+						"DEMAND",
+					),
+				},
+			},
 			"id": schema.StringAttribute{
 				MarkdownDescription: "Id of the instance.",
 				Optional:            true,
@@ -372,7 +387,7 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 
 		value, _ := GetPersistentStorageClassEnum(persistentStorage.Class.ValueString())
 
-		customSpecs.PersistentStorage = client.PersistentStorage{
+		customSpecs.PersistentStorage = &client.PersistentStorage{
 			Class:      value,
 			MountPoint: persistentStorage.MountPoint.ValueString(),
 			Size:       fmt.Sprintf("%dGi", int(persistentStorage.Size.ValueInt64())),
@@ -413,6 +428,7 @@ func (r *InstanceResource) Create(ctx context.Context, req resource.CreateReques
 		ClusterURL:      plan.Image.ValueString(),
 		ClusterProvider: "DOCKERHUB",
 		ClusterName:     plan.ClusterName.ValueString(),
+		Scalable:        plan.ComputeType.ValueString() == "DEMAND",
 	}
 
 	if !plan.HealthCheck.IsNull() {

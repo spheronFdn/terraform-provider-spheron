@@ -65,8 +65,10 @@ resource "spheron_instance" "instance_test" {
 - `machine_image` (String) Machine image name which should be used for deploying instance.
 - `memory` (String) Instance Memory in GB. Available values [0.5, 1, 2, 4, 8, 16, 32].
 - `persistent_storage` (Attributes) Persistent storage that will be attached to the instance. (see [below for nested schema](#nestedatt--persistent_storage))
+- `compute_type` Instance compute type, determining how hardware resources will scale. Available values are [SPOT, DEMAND]
 
 <a id="nestedatt--ports"></a>
+
 ### Nested Schema for `ports`
 
 Required:
@@ -77,8 +79,8 @@ Optional:
 
 - `exposed_port` (Number) The port container port will be exposed to. Currently only posible to expose to port 80. Leave empty to map to random value. Exposed port will be know and available for use after the deployment.
 
-
 <a id="nestedatt--env"></a>
+
 ### Nested Schema for `env`
 
 Required:
@@ -86,8 +88,8 @@ Required:
 - `key` (String) Environment variable key.
 - `value` (String) Environment variable value.
 
-
 <a id="nestedatt--env_secret"></a>
+
 ### Nested Schema for `env_secret`
 
 Required:
@@ -95,8 +97,8 @@ Required:
 - `key` (String) Environment variable key.
 - `value` (String) Environment variable value.
 
-
 <a id="nestedatt--health_check"></a>
+
 ### Nested Schema for `health_check`
 
 Required:
@@ -104,8 +106,8 @@ Required:
 - `path` (String) Path on which health check should be done.
 - `port` (Number) Instance container path on which health check should be done.
 
-
 <a id="nestedatt--persistent_storage"></a>
+
 ### Nested Schema for `persistent_storage`
 
 Required:
@@ -116,34 +118,34 @@ Required:
 
 ### Available machine images
 
-|name            |cpu|memory|
-|----------------|---|------|
-|Glacies Micro   |2  |1Gi   |
-|Glacies Nano    |2  |0.5Gi |
-|Ventus Micro    |1  |1Gi   |
-|Ignis 2x Large  |16 |64Gi  |
-|Ventus X-Large  |4  |16Gi  |
-|Terra Large     |8  |16Gi  |
-|Ventus Small    |1  |2Gi   |
-|Terra 2x Large  |8  |32Gi  |
-|Terra Nano      |2  |1Gi   |
-|Ventus Medium   |2  |4Gi   |
-|Ventus Nano     |1  |0.5Gi |
-|Glacies Small   |2  |2Gi   |
-|Terra Small     |4  |4Gi   |
-|Ignis Large     |8  |32Gi  |
-|Ventus Large    |2  |8Gi   |
-|Terra Medium    |4  |8Gi   |
-|Ventus 2x Medium|2  |4Gi   |
-|Terra 3x Large  |10 |32Gi  |
-|Ventus 2x Large |4  |8Gi   |
-|Terra Small 1Ti |4  |4Gi   |
-|Terra Large Ti  |8  |16Gi  |
+| name             | cpu | memory |
+| ---------------- | --- | ------ |
+| Glacies Micro    | 2   | 1Gi    |
+| Glacies Nano     | 2   | 0.5Gi  |
+| Ventus Micro     | 1   | 1Gi    |
+| Ignis 2x Large   | 16  | 64Gi   |
+| Ventus X-Large   | 4   | 16Gi   |
+| Terra Large      | 8   | 16Gi   |
+| Ventus Small     | 1   | 2Gi    |
+| Terra 2x Large   | 8   | 32Gi   |
+| Terra Nano       | 2   | 1Gi    |
+| Ventus Medium    | 2   | 4Gi    |
+| Ventus Nano      | 1   | 0.5Gi  |
+| Glacies Small    | 2   | 2Gi    |
+| Terra Small      | 4   | 4Gi    |
+| Ignis Large      | 8   | 32Gi   |
+| Ventus Large     | 2   | 8Gi    |
+| Terra Medium     | 4   | 8Gi    |
+| Ventus 2x Medium | 2   | 4Gi    |
+| Terra 3x Large   | 10  | 32Gi   |
+| Ventus 2x Large  | 4   | 8Gi    |
+| Terra Small 1Ti  | 4   | 4Gi    |
+| Terra Large Ti   | 8   | 16Gi   |
 
 ### Available regions
+
 - us-east
 - us-west
 - us-central
 - eu-west
 - any
-

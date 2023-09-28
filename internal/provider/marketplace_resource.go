@@ -329,7 +329,7 @@ func (r *MarketplaceInstanceResource) Create(ctx context.Context, req resource.C
 
 		value, _ := GetPersistentStorageClassEnum(persistentStorage.Class.ValueString())
 
-		customSpecs.PersistentStorage = client.PersistentStorage{
+		customSpecs.PersistentStorage = &client.PersistentStorage{
 			Class:      value,
 			MountPoint: persistentStorage.MountPoint.ValueString(),
 			Size:       fmt.Sprintf("%dGi", int(persistentStorage.Size.ValueInt64())),
